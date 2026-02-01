@@ -17,8 +17,9 @@ export function createEnvelope<T extends { type: string; payload: unknown }>(
   const id = randomUUID();
   const timestamp = new Date().toISOString();
   
-  // Create the canonical signing string: type + from + timestamp + JSON.stringify(payload)
-  const signingString = message.type + publicKey + timestamp + JSON.stringify(message.payload);
+  // Create the canonical signing string with null byte delimiters to prevent ambiguity attacks
+  // Format: type\0from\0timestamp\0payload_json
+  const signingString = message.type + '\0' + publicKey + '\0' + timestamp + '\0' + JSON.stringify(message.payload);
   
   // Sign the canonical string
   const signature = signMessage(signingString, privateKey);
@@ -45,16 +46,15 @@ export function verifyEnvelope(
   try {
     const keyToVerify = publicKey || envelope.from;
     
-    // Extract the message payload based on the envelope structure
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { id, from, timestamp, signature, type, ...rest } = envelope as BaseMessage & Record<string, unknown>;
-    const payload = rest.payload;
+    // Extract the message payload directly with type assertion
+    const payload = (envelope as BaseMessage & { payload: unknown }).payload;
     
-    // Recreate the canonical signing string
-    const signingString = type + keyToVerify + timestamp + JSON.stringify(payload);
+    // Recreate the canonical signing string with null byte delimiters
+    // Format: type\0from\0timestamp\0payload_json
+    const signingString = envelope.type + '\0' + keyToVerify + '\0' + envelope.timestamp + '\0' + JSON.stringify(payload);
     
     // Verify the signature
-    return verifySignature(signingString, signature, keyToVerify);
+    return verifySignature(signingString, envelope.signature, keyToVerify);
   } catch {
     return false;
   }
