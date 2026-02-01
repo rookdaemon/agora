@@ -3,9 +3,10 @@ import assert from 'node:assert';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { tmpdir } from 'node:os';
 
 describe('CLI', () => {
-  const testDir = '/tmp/agora-cli-test';
+  const testDir = join(tmpdir(), 'agora-cli-test');
   const testConfigPath = join(testDir, 'config.json');
   const cliBin = join(process.cwd(), 'dist', 'cli.js');
 

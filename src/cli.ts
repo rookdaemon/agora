@@ -143,12 +143,12 @@ function handlePeersAdd(args: string[], options: CliOptions & { url?: string; to
 
   const config = loadPeerConfig(configPath);
 
-  // Add the peer
+  // Add the peer (name is optional but set for clarity)
   config.peers[name] = {
     url,
     token,
     publicKey: pubkey,
-    name,
+    name, // Set name to match the key for consistency
   };
 
   savePeerConfig(configPath, config);
