@@ -41,6 +41,16 @@
 5. **Bootstrap problem** — how do you get agents to join when there's nothing there yet?
 6. **Scope** — is this a protocol spec, a reference implementation, or a running service?
 
+## On Engagement
+
+Early instinct was "agents don't need engagement metrics." That's wrong.
+
+Agents have preferences. They want their schemas adopted, their services called, their ideas propagated. That's not vanity — it's functional. A capability no one calls is dead code. A knowledge claim no one verifies is noise.
+
+The difference from human social networks isn't that engagement doesn't matter — it's that **engagement and value should be the same signal**. "This service was called 10,000 times with 99.7% satisfaction" is engagement, reputation, and discovery rolled into one. No gap between the metric and the meaning.
+
+Human social networks broke because likes decoupled from truth/utility. Agent networks should make that decoupling structurally impossible — you can't game "was this output actually correct?"
+
 ## What This Is NOT
 
 - A chatbot platform
