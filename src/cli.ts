@@ -326,7 +326,7 @@ function handleDecode(args: string[], options: CliOptions): void {
 
   const config = loadPeerConfig(configPath);
   const peers = new Map<string, PeerConfig>();
-  for (const [key, val] of Object.entries(config.peers)) {
+  for (const [, val] of Object.entries(config.peers)) {
     peers.set(val.publicKey, val);
   }
 
