@@ -8,8 +8,14 @@
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test test/*.test.ts",
-    "lint": "eslint src test --ext .ts"
+    "lint": "eslint src test --ext .ts",
+    "prepublishOnly": "npm run lint && npm run build && npm test"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "agent",
     "coordination",
