@@ -5,7 +5,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { loadPeerConfig, savePeerConfig, initPeerConfig } from './transport/peer-config.js';
-import { sendToPeer, type PeerConfig } from './transport/http.js';
+import { sendToPeer, decodeInboundEnvelope, type PeerConfig } from './transport/http.js';
 import type { MessageType } from './message/envelope.js';
 
 interface CliOptions {
@@ -309,6 +309,50 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
 }
 
 /**
+ * Handle the `agora decode` command.
+ */
+function handleDecode(args: string[], options: CliOptions): void {
+  if (args.length < 1) {
+    console.error('Error: Missing message. Usage: agora decode <message>');
+    process.exit(1);
+  }
+
+  const configPath = getConfigPath(options);
+
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+  const peers = new Map<string, PeerConfig>();
+  for (const [key, val] of Object.entries(config.peers)) {
+    peers.set(val.publicKey, val);
+  }
+
+  const message = args.join(' ');
+  const result = decodeInboundEnvelope(message, peers);
+
+  if (result.ok) {
+    output({
+      status: 'verified',
+      sender: result.envelope.sender,
+      type: result.envelope.type,
+      payload: result.envelope.payload,
+      id: result.envelope.id,
+      timestamp: result.envelope.timestamp,
+      inReplyTo: result.envelope.inReplyTo || null,
+    }, options.pretty || false);
+  } else {
+    output({
+      status: 'failed',
+      reason: result.reason,
+    }, options.pretty || false);
+    process.exit(1);
+  }
+}
+
+/**
  * Parse CLI arguments and route to appropriate handler.
  */
 async function main(): Promise<void> {
@@ -377,8 +421,11 @@ async function main(): Promise<void> {
       case 'send':
         await handleSend([subcommand, ...remainingArgs], options);
         break;
+      case 'decode':
+        handleDecode([subcommand, ...remainingArgs].filter(Boolean), options);
+        break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, peers, send`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, peers, send, decode`);
         process.exit(1);
     }
   } catch (e) {
