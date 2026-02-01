@@ -50,10 +50,11 @@ export function verifyEnvelope(
     const payload = (envelope as BaseMessage & { payload: unknown }).payload;
     
     // Recreate the canonical signing string with null byte delimiters
+    // The signing string must use envelope.from (what was originally signed), not keyToVerify
     // Format: type\0from\0timestamp\0payload_json
-    const signingString = envelope.type + '\0' + keyToVerify + '\0' + envelope.timestamp + '\0' + JSON.stringify(payload);
+    const signingString = envelope.type + '\0' + envelope.from + '\0' + envelope.timestamp + '\0' + JSON.stringify(payload);
     
-    // Verify the signature
+    // Verify the signature using the provided key (or envelope.from if not provided)
     return verifySignature(signingString, envelope.signature, keyToVerify);
   } catch {
     return false;
