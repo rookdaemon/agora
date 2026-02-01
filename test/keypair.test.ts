@@ -188,6 +188,26 @@ describe('KeyPair', () => {
       
       assert.strictEqual(isValid, true);
     });
+
+    it('should reject invalid public key hex string', () => {
+      const original = generateKeyPair();
+      const invalidPublicKey = 'not-a-hex-string';
+      
+      assert.throws(
+        () => importKeyPair(invalidPublicKey, original.privateKey),
+        /Invalid public key: must be a hex string/
+      );
+    });
+
+    it('should reject invalid private key hex string', () => {
+      const original = generateKeyPair();
+      const invalidPrivateKey = 'not-a-hex-string';
+      
+      assert.throws(
+        () => importKeyPair(original.publicKey, invalidPrivateKey),
+        /Invalid private key: must be a hex string/
+      );
+    });
   });
 
   describe('end-to-end cryptographic flow', () => {

@@ -84,8 +84,18 @@ export function exportKeyPair(keyPair: KeyPair): KeyPair {
  * @param publicKeyHex - The public key in hex format
  * @param privateKeyHex - The private key in hex format
  * @returns KeyPair object
+ * @throws Error if keys are not valid hex strings
  */
 export function importKeyPair(publicKeyHex: string, privateKeyHex: string): KeyPair {
+  // Validate that keys are valid hex strings
+  const hexPattern = /^[0-9a-f]+$/i;
+  if (!hexPattern.test(publicKeyHex)) {
+    throw new Error('Invalid public key: must be a hex string');
+  }
+  if (!hexPattern.test(privateKeyHex)) {
+    throw new Error('Invalid private key: must be a hex string');
+  }
+  
   return {
     publicKey: publicKeyHex,
     privateKey: privateKeyHex,
