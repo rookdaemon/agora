@@ -4,19 +4,13 @@ import { parseArgs } from 'node:util';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { loadPeerConfig, savePeerConfig, initPeerConfig, type PeerConfigFile } from './transport/peer-config.js';
+import { loadPeerConfig, savePeerConfig, initPeerConfig } from './transport/peer-config.js';
 import { sendToPeer, type PeerConfig } from './transport/http.js';
 import type { MessageType } from './message/envelope.js';
 
 interface CliOptions {
   config?: string;
   pretty?: boolean;
-}
-
-interface GlobalArgs extends CliOptions {
-  command?: string;
-  subcommand?: string;
-  args: string[];
 }
 
 /**
@@ -50,7 +44,17 @@ function output(data: unknown, pretty: boolean): void {
     // Pretty output for humans
     if (typeof data === 'object' && data !== null) {
       for (const [key, value] of Object.entries(data)) {
-        if (typeof value === 'object' && value !== null) {
+        if (Array.isArray(value)) {
+          console.log(`${key}:`);
+          for (const item of value) {
+            if (typeof item === 'object' && item !== null) {
+              const entries = Object.entries(item);
+              console.log(`  - ${entries.map(([k, v]) => `${k}: ${v}`).join(', ')}`);
+            } else {
+              console.log(`  - ${item}`);
+            }
+          }
+        } else if (typeof value === 'object' && value !== null) {
           console.log(`${key}:`);
           for (const [k, v] of Object.entries(value)) {
             console.log(`  ${k}: ${v}`);
@@ -248,7 +252,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
     messageType = options.type as MessageType;
     try {
       messagePayload = JSON.parse(options.payload);
-    } catch (e) {
+    } catch {
       console.error('Error: Invalid JSON payload.');
       process.exit(1);
     }

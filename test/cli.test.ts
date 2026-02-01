@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { existsSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -212,7 +212,9 @@ describe('CLI', () => {
       const output = JSON.parse(result.stdout);
       assert.strictEqual(output.peers.length, 2);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const alice = output.peers.find((p: any) => p.name === 'alice');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const bob = output.peers.find((p: any) => p.name === 'bob');
 
       assert.ok(alice);
