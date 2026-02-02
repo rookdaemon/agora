@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { loadPeerConfig, savePeerConfig, initPeerConfig } from './transport/peer-config.js';
 import { sendToPeer, decodeInboundEnvelope, type PeerConfig } from './transport/http.js';
 import type { MessageType } from './message/envelope.js';
+import type { AnnouncePayload } from './registry/messages.js';
 
 interface CliOptions {
   config?: string;
@@ -353,6 +354,110 @@ function handleDecode(args: string[], options: CliOptions): void {
 }
 
 /**
+ * Handle the `agora status` command.
+ */
+function handleStatus(options: CliOptions): void {
+  const configPath = getConfigPath(options);
+
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+  const peerCount = Object.keys(config.peers).length;
+
+  output({
+    identity: config.identity.publicKey,
+    configPath,
+    peerCount,
+    peers: Object.keys(config.peers),
+  }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora announce` command.
+ * Broadcasts an announce message to all configured peers.
+ */
+async function handleAnnounce(options: CliOptions & { name?: string; version?: string }): Promise<void> {
+  const configPath = getConfigPath(options);
+
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+  const peerCount = Object.keys(config.peers).length;
+
+  if (peerCount === 0) {
+    console.error('Error: No peers configured. Use `agora peers add` to add peers first.');
+    process.exit(1);
+  }
+
+  // Create announce payload
+  const announcePayload: AnnouncePayload = {
+    capabilities: [],
+    metadata: {
+      name: options.name || 'agora-node',
+      version: options.version || '0.1.0',
+    },
+  };
+
+  // Create transport config
+  const peers = new Map<string, PeerConfig>();
+  for (const [, peer] of Object.entries(config.peers)) {
+    peers.set(peer.publicKey, {
+      url: peer.url,
+      token: peer.token,
+      publicKey: peer.publicKey,
+    });
+  }
+
+  const transportConfig = {
+    identity: config.identity,
+    peers,
+  };
+
+  // Send announce to all peers
+  const results: Array<{ peer: string; status: string; httpStatus?: number; error?: string }> = [];
+
+  for (const [name, peer] of Object.entries(config.peers)) {
+    try {
+      const result = await sendToPeer(
+        transportConfig,
+        peer.publicKey,
+        'announce',
+        announcePayload
+      );
+
+      if (result.ok) {
+        results.push({
+          peer: name,
+          status: 'sent',
+          httpStatus: result.status,
+        });
+      } else {
+        results.push({
+          peer: name,
+          status: 'failed',
+          httpStatus: result.status,
+          error: result.error,
+        });
+      }
+    } catch (e) {
+      results.push({
+        peer: name,
+        status: 'error',
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  output({ results }, options.pretty || false);
+}
+
+/**
  * Parse CLI arguments and route to appropriate handler.
  */
 async function main(): Promise<void> {
@@ -360,7 +465,7 @@ async function main(): Promise<void> {
 
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
-    console.error('Commands: init, whoami, peers, send');
+    console.error('Commands: init, whoami, status, peers, announce, send, decode');
     process.exit(1);
   }
 
@@ -375,6 +480,8 @@ async function main(): Promise<void> {
       pubkey: { type: 'string' },
       type: { type: 'string' },
       payload: { type: 'string' },
+      name: { type: 'string' },
+      version: { type: 'string' },
     },
     strict: false,
     allowPositionals: true,
@@ -384,7 +491,7 @@ async function main(): Promise<void> {
   const subcommand = parsed.positionals[1];
   const remainingArgs = parsed.positionals.slice(2);
 
-  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string } = {
+  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string; name?: string; version?: string } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
     type: typeof parsed.values.type === 'string' ? parsed.values.type : undefined,
@@ -392,6 +499,8 @@ async function main(): Promise<void> {
     url: typeof parsed.values.url === 'string' ? parsed.values.url : undefined,
     token: typeof parsed.values.token === 'string' ? parsed.values.token : undefined,
     pubkey: typeof parsed.values.pubkey === 'string' ? parsed.values.pubkey : undefined,
+    name: typeof parsed.values.name === 'string' ? parsed.values.name : undefined,
+    version: typeof parsed.values.version === 'string' ? parsed.values.version : undefined,
   };
 
   try {
@@ -402,12 +511,20 @@ async function main(): Promise<void> {
       case 'whoami':
         handleWhoami(options);
         break;
+      case 'status':
+        handleStatus(options);
+        break;
+      case 'announce':
+        await handleAnnounce(options);
+        break;
       case 'peers':
         switch (subcommand) {
           case 'add':
             handlePeersAdd(remainingArgs, options);
             break;
           case 'list':
+          case undefined:
+            // Allow 'agora peers' to work like 'agora peers list'
             handlePeersList(options);
             break;
           case 'remove':
@@ -425,7 +542,7 @@ async function main(): Promise<void> {
         handleDecode([subcommand, ...remainingArgs].filter(Boolean), options);
         break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, peers, send, decode`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode`);
         process.exit(1);
     }
   } catch (e) {

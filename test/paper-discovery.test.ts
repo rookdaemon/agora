@@ -50,6 +50,7 @@ describe('PaperDiscoveryPayload', () => {
   });
 
   it('should work without optional pdf_url', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { pdf_url: _, ...payloadWithoutPdf } = samplePayload;
     const kp = generateKeyPair();
     const envelope = createEnvelope('paper_discovery', kp.publicKey, kp.privateKey, payloadWithoutPdf);
