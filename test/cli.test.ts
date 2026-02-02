@@ -5,6 +5,12 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
+interface PeerListItem {
+  name: string;
+  url: string;
+  publicKey: string;
+}
+
 describe('CLI', () => {
   const testDir = join(tmpdir(), 'agora-cli-test');
   const testConfigPath = join(testDir, 'config.json');
@@ -213,10 +219,8 @@ describe('CLI', () => {
       const output = JSON.parse(result.stdout);
       assert.strictEqual(output.peers.length, 2);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const alice = output.peers.find((p: any) => p.name === 'alice');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bob = output.peers.find((p: any) => p.name === 'bob');
+      const alice = output.peers.find((p: PeerListItem) => p.name === 'alice');
+      const bob = output.peers.find((p: PeerListItem) => p.name === 'bob');
 
       assert.ok(alice);
       assert.strictEqual(alice.url, 'http://alice.local:18790/hooks');
@@ -497,8 +501,7 @@ describe('CLI', () => {
       const output = JSON.parse(result.stdout);
       assert.ok(Array.isArray(output.peers));
       assert.strictEqual(output.peers.length, 1);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const alice = output.peers.find((p: any) => p.name === 'alice');
+      const alice = output.peers.find((p: PeerListItem) => p.name === 'alice');
       assert.ok(alice);
     });
   });
