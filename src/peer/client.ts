@@ -104,8 +104,12 @@ export class PeerClient extends EventEmitter {
 
         // Attempt to reconnect with exponential backoff
         if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-          const delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts);
           this.reconnectAttempts++;
+          // Calculate delay with exponential backoff, capped at 30 seconds
+          const delay = Math.min(
+            this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+            30000
+          );
           
           this.reconnectTimeout = setTimeout(() => {
             this.connect();

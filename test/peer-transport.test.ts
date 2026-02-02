@@ -103,16 +103,18 @@ describe('Peer Transport', () => {
       manager1.connect(`ws://localhost:${port2}`);
       await connectedPromise;
 
-      // Create a message with a valid envelope
-      const identity1 = generateKeyPair();
+      // Create a message with a valid envelope but then tamper with it
+      // Using an independent identity (not manager1's) to demonstrate that
+      // even a correctly signed message from a different sender is rejected
+      const differentIdentity = generateKeyPair();
       const validEnvelope = createEnvelope(
         'publish',
-        identity1.publicKey,
-        identity1.privateKey,
+        differentIdentity.publicKey,
+        differentIdentity.privateKey,
         { data: 'test' }
       );
 
-      // Tamper with the envelope (invalid signature)
+      // Tamper with the envelope payload (invalid signature)
       const tamperedEnvelope = {
         ...validEnvelope,
         payload: { data: 'tampered' },
