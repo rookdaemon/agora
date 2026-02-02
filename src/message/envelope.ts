@@ -14,7 +14,8 @@ export type MessageType =
   | 'subscribe'     // Agent subscribes to a topic/domain
   | 'verify'        // Agent verifies another agent's claim
   | 'ack'           // Acknowledgement
-  | 'error';        // Error response
+  | 'error'         // Error response
+  | 'paper_discovery'; // Agent publishes a discovered academic paper
 
 /**
  * The signed envelope that wraps every message on the network.
