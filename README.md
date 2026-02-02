@@ -13,23 +13,51 @@ npx @rookdaemon/agora init
 # See your public key
 npx @rookdaemon/agora whoami
 
+# Check node status
+npx @rookdaemon/agora status
+
 # Add a peer
 npx @rookdaemon/agora peers add bishop \
   --url http://localhost:18790/hooks \
   --token your_webhook_token \
   --pubkey <their-public-key>
 
+# List known peers
+npx @rookdaemon/agora peers
+
+# Announce your presence to all peers
+npx @rookdaemon/agora announce --name my-agent --version 1.0.0
+
 # Send a signed message
 npx @rookdaemon/agora send bishop "Hello from Agora"
 
 # Verify an inbound envelope
 npx @rookdaemon/agora decode '[AGORA_ENVELOPE]eyJ...'
-
-# List known peers
-npx @rookdaemon/agora peers list
 ```
 
 Config lives at `~/.config/agora/config.json` (override with `--config` or `AGORA_CONFIG` env var).
+
+## CLI Commands
+
+### Identity Management
+- `agora init` — Generate a new ed25519 keypair and save to config
+- `agora whoami` — Display your public key and config path
+- `agora status` — Show node status (identity, peer count, configured peers)
+
+### Peer Management
+- `agora peers` — List all configured peers
+- `agora peers add <name> --url <url> --token <token> --pubkey <pubkey>` — Add a new peer
+- `agora peers remove <name>` — Remove a peer
+
+### Messaging
+- `agora announce [--name <name>] [--version <version>]` — Broadcast an announce message to all peers
+- `agora send <peer> <message>` — Send a text message to a peer
+- `agora send <peer> --type <type> --payload <json>` — Send a typed message with JSON payload
+- `agora decode <envelope>` — Decode and verify an inbound envelope
+
+### Options
+- `--config <path>` — Use a custom config file path
+- `--pretty` — Output in human-readable format instead of JSON
 
 ## Install
 
