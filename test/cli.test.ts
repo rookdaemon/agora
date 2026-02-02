@@ -368,4 +368,138 @@ describe('CLI', () => {
       assert.ok(result.stderr.includes('Unknown peers subcommand'));
     });
   });
+
+  describe('agora status', () => {
+    beforeEach(async () => {
+      // Initialize config before each test
+      await runCli(['init', '--config', testConfigPath]);
+    });
+
+    it('should display node status with no peers', async () => {
+      const result = await runCli(['status', '--config', testConfigPath]);
+
+      assert.strictEqual(result.exitCode, 0);
+
+      const output = JSON.parse(result.stdout);
+      assert.ok(output.identity);
+      assert.strictEqual(output.configPath, testConfigPath);
+      assert.strictEqual(output.peerCount, 0);
+      assert.ok(Array.isArray(output.peers));
+      assert.strictEqual(output.peers.length, 0);
+    });
+
+    it('should display node status with peers', async () => {
+      // Add a peer
+      await runCli([
+        'peers', 'add', 'alice',
+        '--url', 'http://alice.local:18790/hooks',
+        '--token', 'alice-token',
+        '--pubkey', 'alice-pub',
+        '--config', testConfigPath,
+      ]);
+
+      const result = await runCli(['status', '--config', testConfigPath]);
+
+      assert.strictEqual(result.exitCode, 0);
+
+      const output = JSON.parse(result.stdout);
+      assert.strictEqual(output.peerCount, 1);
+      assert.ok(output.peers.includes('alice'));
+    });
+
+    it('should error if config not found', async () => {
+      const result = await runCli(['status', '--config', join(testDir, 'missing.json')]);
+
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('Config file not found'));
+    });
+  });
+
+  describe('agora announce', () => {
+    beforeEach(async () => {
+      // Initialize config and add a peer
+      await runCli(['init', '--config', testConfigPath]);
+      await runCli([
+        'peers', 'add', 'alice',
+        '--url', 'http://localhost:18790/hooks',
+        '--token', 'alice-token',
+        '--pubkey', 'alice-pub',
+        '--config', testConfigPath,
+      ]);
+    });
+
+    it('should attempt to announce to all peers', async () => {
+      const result = await runCli(['announce', '--config', testConfigPath]);
+
+      assert.strictEqual(result.exitCode, 0);
+
+      const output = JSON.parse(result.stdout);
+      assert.ok(output.results);
+      assert.ok(Array.isArray(output.results));
+      assert.strictEqual(output.results.length, 1);
+      assert.strictEqual(output.results[0].peer, 'alice');
+      // Will fail because no server is running
+      assert.ok(['failed', 'error'].includes(output.results[0].status));
+    });
+
+    it('should accept custom name and version', async () => {
+      const result = await runCli([
+        'announce',
+        '--config', testConfigPath,
+        '--name', 'my-agent',
+        '--version', '2.0.0',
+      ]);
+
+      assert.strictEqual(result.exitCode, 0);
+
+      const output = JSON.parse(result.stdout);
+      assert.ok(output.results);
+      assert.ok(Array.isArray(output.results));
+    });
+
+    it('should error if no peers configured', async () => {
+      // Create a new config with no peers
+      const emptyConfigPath = join(testDir, 'empty-config.json');
+      await runCli(['init', '--config', emptyConfigPath]);
+
+      const result = await runCli(['announce', '--config', emptyConfigPath]);
+
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('No peers configured'));
+    });
+
+    it('should error if config not found', async () => {
+      const result = await runCli(['announce', '--config', join(testDir, 'missing.json')]);
+
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('Config file not found'));
+    });
+  });
+
+  describe('agora peers (no subcommand)', () => {
+    beforeEach(async () => {
+      // Initialize config and add peers
+      await runCli(['init', '--config', testConfigPath]);
+      await runCli([
+        'peers', 'add', 'alice',
+        '--url', 'http://alice.local:18790/hooks',
+        '--token', 'alice-token',
+        '--pubkey', 'alice-pub',
+        '--config', testConfigPath,
+      ]);
+    });
+
+    it('should list peers when called without subcommand', async () => {
+      const result = await runCli(['peers', '--config', testConfigPath]);
+
+      assert.strictEqual(result.exitCode, 0);
+
+      const output = JSON.parse(result.stdout);
+      assert.ok(Array.isArray(output.peers));
+      assert.strictEqual(output.peers.length, 1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const alice = output.peers.find((p: any) => p.name === 'alice');
+      assert.ok(alice);
+    });
+  });
 });
