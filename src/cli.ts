@@ -472,6 +472,13 @@ async function handleServe(options: CliOptions & { port?: string; name?: string 
 
   const config = loadPeerConfig(configPath);
   const port = parseInt(options.port || '9473', 10);
+  
+  // Validate port
+  if (isNaN(port) || port < 1 || port > 65535) {
+    console.error(`Error: Invalid port number '${options.port}'. Port must be between 1 and 65535.`);
+    process.exit(1);
+  }
+  
   const serverName = options.name || 'agora-server';
 
   // Create announce payload

@@ -519,7 +519,7 @@ describe('CLI', () => {
         });
 
         let stdout = '';
-        let stderr = '';
+        let timeoutId: NodeJS.Timeout;
 
         child.stdout.on('data', (data) => {
           stdout += data.toString();
@@ -533,17 +533,17 @@ describe('CLI', () => {
               assert.ok(stdout.includes('Public Key:'), 'Public key should be in output');
               assert.ok(stdout.includes('Agora server started'), 'Server started message should be in output');
               
+              // Clean up timeout
+              clearTimeout(timeoutId);
+              
               // Kill the server
               child.kill('SIGINT');
             } catch (error) {
+              clearTimeout(timeoutId);
               child.kill('SIGINT');
               reject(error);
             }
           }
-        });
-
-        child.stderr.on('data', (data) => {
-          stderr += data.toString();
         });
 
         child.on('close', (code) => {
@@ -558,7 +558,7 @@ describe('CLI', () => {
         });
 
         // Timeout after 5 seconds
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           child.kill('SIGINT');
           reject(new Error('Server did not start within 5 seconds'));
         }, 5000);
@@ -579,6 +579,7 @@ describe('CLI', () => {
         });
 
         let stdout = '';
+        let timeoutId: NodeJS.Timeout;
 
         child.stdout.on('data', (data) => {
           stdout += data.toString();
@@ -586,8 +587,10 @@ describe('CLI', () => {
           if (stdout.includes('Listening for peer connections')) {
             try {
               assert.ok(stdout.includes('WebSocket Port: 9473'), 'Default port should be 9473');
+              clearTimeout(timeoutId);
               child.kill('SIGINT');
             } catch (error) {
+              clearTimeout(timeoutId);
               child.kill('SIGINT');
               reject(error);
             }
@@ -598,11 +601,25 @@ describe('CLI', () => {
           resolve();
         });
 
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           child.kill('SIGINT');
           reject(new Error('Server did not start within 5 seconds'));
         }, 5000);
       });
+    });
+
+    it('should error if port is invalid', async () => {
+      const result = await runCli(['serve', '--config', testConfigPath, '--port', 'invalid']);
+      
+      assert.notStrictEqual(result.exitCode, 0);
+      assert.ok(result.stderr.includes('Invalid port number'));
+    });
+
+    it('should error if port is out of range', async () => {
+      const result = await runCli(['serve', '--config', testConfigPath, '--port', '99999']);
+      
+      assert.notStrictEqual(result.exitCode, 0);
+      assert.ok(result.stderr.includes('Invalid port number'));
     });
   });
 });
