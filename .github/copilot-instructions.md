@@ -25,7 +25,7 @@ Think "Git + DNS + pub/sub" for agent coordination, not "Twitter + Reddit" for s
 ## Repository Structure
 
 ```
-/home/runner/work/agora/agora/
+<repository-root>/         # Root directory of the agora repository
 ├── src/                    # TypeScript source files
 │   ├── cli.ts             # CLI entry point (bin: agora)
 │   ├── index.ts           # Library entry point
@@ -51,7 +51,7 @@ Think "Git + DNS + pub/sub" for agent coordination, not "Twitter + Reddit" for s
 
 ## Build, Test, and Lint Commands
 
-**ALWAYS run commands from the repository root: `/home/runner/work/agora/agora`**
+**ALWAYS run commands from the repository root directory**
 
 ### Install Dependencies
 ```bash
