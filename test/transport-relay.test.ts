@@ -69,7 +69,7 @@ describe('Relay Transport', () => {
 
       // Should fail relatively quickly (within timeout period)
       assert.strictEqual(result.ok, false);
-      assert.ok(duration < 15000); // Should timeout within 15 seconds (we set 10s timeout)
+      assert.ok(duration < 12000); // Should timeout within ~10s + margin
     });
   });
 });

@@ -173,8 +173,8 @@ describe('CLI', () => {
       ]);
 
       assert.strictEqual(result.exitCode, 1);
-      // Updated error message to reflect relay transport support
-      assert.ok(result.stderr.includes('Either (--url and --token) must be provided'));
+      // Updated error message to reflect clearer validation ordering
+      assert.ok(result.stderr.includes('Both --url and --token must be provided together'));
     });
   });
 

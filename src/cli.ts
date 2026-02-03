@@ -144,6 +144,12 @@ function handlePeersAdd(args: string[], options: CliOptions & { url?: string; to
     process.exit(1);
   }
 
+  // Validate that if one of url/token is provided, both must be
+  if ((url && !token) || (!url && token)) {
+    console.error('Error: Both --url and --token must be provided together.');
+    process.exit(1);
+  }
+
   // Check if we have HTTP transport or relay
   const config = loadPeerConfig(configPath);
   const hasHttpConfig = url && token;
@@ -151,12 +157,6 @@ function handlePeersAdd(args: string[], options: CliOptions & { url?: string; to
 
   if (!hasHttpConfig && !hasRelay) {
     console.error('Error: Either (--url and --token) must be provided, or relay must be configured in config file.');
-    process.exit(1);
-  }
-
-  // Validate that if one of url/token is provided, both must be
-  if ((url && !token) || (!url && token)) {
-    console.error('Error: Both --url and --token must be provided together.');
     process.exit(1);
   }
 
@@ -300,12 +300,12 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
   try {
     if (hasHttpTransport) {
       // Use HTTP transport (existing behavior)
-      // TypeScript narrowing: we know url and token are strings here
+      // Non-null assertion: we know url and token are strings here
       const transportConfig = {
         identity: config.identity,
         peers: new Map<string, PeerConfig>([[peer.publicKey, {
-          url: peer.url as string,
-          token: peer.token as string,
+          url: peer.url!,
+          token: peer.token!,
           publicKey: peer.publicKey,
         }]]),
       };
@@ -338,10 +338,10 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
       }
     } else if (hasRelay) {
       // Use relay transport
-      // TypeScript narrowing: we know relay is a string here
+      // Non-null assertion: we know relay is a string here
       const relayConfig = {
         identity: config.identity,
-        relayUrl: config.relay as string,
+        relayUrl: config.relay!,
       };
 
       const result = await sendViaRelay(
@@ -493,8 +493,8 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
         // Use HTTP transport
         const peers = new Map<string, PeerConfig>();
         peers.set(peer.publicKey, {
-          url: peer.url as string,
-          token: peer.token as string,
+          url: peer.url!,
+          token: peer.token!,
           publicKey: peer.publicKey,
         });
 
@@ -530,7 +530,7 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
         // Use relay transport
         const relayConfig = {
           identity: config.identity,
-          relayUrl: config.relay as string,
+          relayUrl: config.relay!,
         };
 
         const result = await sendViaRelay(

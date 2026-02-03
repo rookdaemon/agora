@@ -23,12 +23,22 @@ export async function sendViaRelay(
     const ws = new WebSocket(config.relayUrl);
     let registered = false;
     let messageSent = false;
+    let resolved = false;
+
+    // Helper to resolve once
+    const resolveOnce = (result: { ok: boolean; error?: string }): void => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(result);
+      }
+    };
 
     // Set timeout for the entire operation
     const timeout = setTimeout(() => {
       if (!messageSent) {
         ws.close();
-        resolve({ ok: false, error: 'Relay connection timeout' });
+        resolveOnce({ ok: false, error: 'Relay connection timeout' });
       }
     }, 10000); // 10 second timeout
 
@@ -69,30 +79,26 @@ export async function sendViaRelay(
           // Close connection after sending
           setTimeout(() => {
             ws.close();
-            clearTimeout(timeout);
-            resolve({ ok: true });
+            resolveOnce({ ok: true });
           }, 100); // Small delay to ensure message is sent
         } else if (msg.type === 'error') {
-          clearTimeout(timeout);
           ws.close();
-          resolve({ ok: false, error: msg.message || 'Relay server error' });
+          resolveOnce({ ok: false, error: msg.message || 'Relay server error' });
         }
       } catch (err) {
-        clearTimeout(timeout);
         ws.close();
-        resolve({ ok: false, error: err instanceof Error ? err.message : String(err) });
+        resolveOnce({ ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     });
 
     ws.on('error', (err) => {
-      clearTimeout(timeout);
-      resolve({ ok: false, error: err.message });
+      ws.close();
+      resolveOnce({ ok: false, error: err.message });
     });
 
     ws.on('close', () => {
-      clearTimeout(timeout);
       if (!messageSent) {
-        resolve({ ok: false, error: 'Connection closed before message sent' });
+        resolveOnce({ ok: false, error: 'Connection closed before message sent' });
       }
     });
   });
