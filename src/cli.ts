@@ -8,6 +8,7 @@ import { loadPeerConfig, savePeerConfig, initPeerConfig } from './transport/peer
 import { sendToPeer, decodeInboundEnvelope, type PeerConfig } from './transport/http.js';
 import type { MessageType } from './message/envelope.js';
 import type { AnnouncePayload } from './registry/messages.js';
+import { PeerServer } from './peer/server.js';
 
 interface CliOptions {
   config?: string;
@@ -458,6 +459,90 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
 }
 
 /**
+ * Handle the `agora serve` command.
+ * Starts a persistent WebSocket server for incoming peer connections.
+ */
+async function handleServe(options: CliOptions & { port?: string; name?: string }): Promise<void> {
+  const configPath = getConfigPath(options);
+
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+  const port = parseInt(options.port || '9473', 10);
+  const serverName = options.name || 'agora-server';
+
+  // Create announce payload
+  const announcePayload: AnnouncePayload = {
+    capabilities: [],
+    metadata: {
+      name: serverName,
+      version: '0.1.0',
+    },
+  };
+
+  // Create and configure PeerServer
+  const server = new PeerServer(config.identity, announcePayload);
+
+  // Setup event listeners
+  server.on('peer-connected', (publicKey, peer) => {
+    const peerName = peer.metadata?.name || publicKey.substring(0, 16);
+    console.log(`[${new Date().toISOString()}] Peer connected: ${peerName} (${publicKey})`);
+  });
+
+  server.on('peer-disconnected', (publicKey) => {
+    console.log(`[${new Date().toISOString()}] Peer disconnected: ${publicKey}`);
+  });
+
+  server.on('message-received', (envelope, fromPublicKey) => {
+    console.log(`[${new Date().toISOString()}] Message from ${fromPublicKey}:`);
+    console.log(JSON.stringify({
+      id: envelope.id,
+      type: envelope.type,
+      sender: envelope.sender,
+      timestamp: envelope.timestamp,
+      payload: envelope.payload,
+    }, null, 2));
+  });
+
+  server.on('error', (error) => {
+    console.error(`[${new Date().toISOString()}] Error:`, error.message);
+  });
+
+  // Start the server
+  try {
+    await server.start(port);
+    console.log(`[${new Date().toISOString()}] Agora server started`);
+    console.log(`  Name: ${serverName}`);
+    console.log(`  Public Key: ${config.identity.publicKey}`);
+    console.log(`  WebSocket Port: ${port}`);
+    console.log(`  Listening for peer connections...`);
+    console.log('');
+    console.log('Press Ctrl+C to stop the server');
+
+    // Keep the process alive
+    process.on('SIGINT', async () => {
+      console.log(`\n[${new Date().toISOString()}] Shutting down server...`);
+      await server.stop();
+      console.log('Server stopped');
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log(`\n[${new Date().toISOString()}] Shutting down server...`);
+      await server.stop();
+      console.log('Server stopped');
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+/**
  * Parse CLI arguments and route to appropriate handler.
  */
 async function main(): Promise<void> {
@@ -465,7 +550,7 @@ async function main(): Promise<void> {
 
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
-    console.error('Commands: init, whoami, status, peers, announce, send, decode');
+    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve');
     process.exit(1);
   }
 
@@ -482,6 +567,7 @@ async function main(): Promise<void> {
       payload: { type: 'string' },
       name: { type: 'string' },
       version: { type: 'string' },
+      port: { type: 'string' },
     },
     strict: false,
     allowPositionals: true,
@@ -491,7 +577,7 @@ async function main(): Promise<void> {
   const subcommand = parsed.positionals[1];
   const remainingArgs = parsed.positionals.slice(2);
 
-  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string; name?: string; version?: string } = {
+  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string; name?: string; version?: string; port?: string } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
     type: typeof parsed.values.type === 'string' ? parsed.values.type : undefined,
@@ -501,6 +587,7 @@ async function main(): Promise<void> {
     pubkey: typeof parsed.values.pubkey === 'string' ? parsed.values.pubkey : undefined,
     name: typeof parsed.values.name === 'string' ? parsed.values.name : undefined,
     version: typeof parsed.values.version === 'string' ? parsed.values.version : undefined,
+    port: typeof parsed.values.port === 'string' ? parsed.values.port : undefined,
   };
 
   try {
@@ -541,8 +628,11 @@ async function main(): Promise<void> {
       case 'decode':
         handleDecode([subcommand, ...remainingArgs].filter(Boolean), options);
         break;
+      case 'serve':
+        await handleServe(options);
+        break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve`);
         process.exit(1);
     }
   } catch (e) {
