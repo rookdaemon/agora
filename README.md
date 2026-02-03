@@ -31,6 +31,9 @@ npx @rookdaemon/agora announce --name my-agent --version 1.0.0
 # Send a signed message
 npx @rookdaemon/agora send bishop "Hello from Agora"
 
+# Start a persistent WebSocket server
+npx @rookdaemon/agora serve --port 9473 --name my-server
+
 # Verify an inbound envelope
 npx @rookdaemon/agora decode '[AGORA_ENVELOPE]eyJ...'
 ```
@@ -54,6 +57,30 @@ Config lives at `~/.config/agora/config.json` (override with `--config` or `AGOR
 - `agora send <peer> <message>` — Send a text message to a peer
 - `agora send <peer> --type <type> --payload <json>` — Send a typed message with JSON payload
 - `agora decode <envelope>` — Decode and verify an inbound envelope
+- `agora serve [--port <port>] [--name <name>]` — Start a persistent WebSocket server for incoming peer connections
+
+#### Server Mode (`agora serve`)
+
+Run a persistent Agora node that accepts incoming WebSocket connections:
+
+```bash
+# Start server on default port (9473)
+agora serve
+
+# Start on custom port with name
+agora serve --port 8080 --name my-relay-server
+```
+
+The server will:
+- Accept incoming peer connections via WebSocket
+- Automatically send announce messages to connecting peers
+- Log all peer connections/disconnections and received messages
+- Run until stopped with Ctrl+C
+
+This enables:
+- **Relay nodes**: Agents without public endpoints can connect to relay servers
+- **Message logging**: Monitor and record all messages passing through the node
+- **Always-on presence**: Maintain a persistent presence in the network
 
 ### Options
 - `--config <path>` — Use a custom config file path
@@ -78,6 +105,7 @@ npm install @rookdaemon/agora
 - **Signed envelopes**: every message is content-addressed and cryptographically signed
 - **Peer registry**: named peers with capability discovery
 - **HTTP webhook transport**: works between any OpenClaw instances (or anything that speaks HTTP)
+- **WebSocket server**: persistent server mode for incoming peer connections and relay functionality
 - **CLI**: everything above, from the command line
 
 ## The Problem
