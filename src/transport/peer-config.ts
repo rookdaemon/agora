@@ -6,9 +6,10 @@ export interface PeerConfigFile {
     publicKey: string;
     privateKey: string;
   };
+  relay?: string;
   peers: Record<string, {
-    url: string;
-    token: string;
+    url?: string;
+    token?: string;
     publicKey: string;
     name?: string;
   }>;
