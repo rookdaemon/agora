@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { loadPeerConfig, savePeerConfig, initPeerConfig } from './transport/peer-config.js';
 import { sendToPeer, decodeInboundEnvelope, type PeerConfig } from './transport/http.js';
+import { sendViaRelay } from './transport/relay.js';
 import type { MessageType } from './message/envelope.js';
 import type { AnnouncePayload } from './registry/messages.js';
 import { PeerServer } from './peer/server.js';
@@ -122,7 +123,7 @@ function handleWhoami(options: CliOptions): void {
  */
 function handlePeersAdd(args: string[], options: CliOptions & { url?: string; token?: string; pubkey?: string }): void {
   if (args.length < 1) {
-    console.error('Error: Missing peer name. Usage: agora peers add <name> --url <url> --token <token> --pubkey <pubkey>');
+    console.error('Error: Missing peer name. Usage: agora peers add <name> --pubkey <pubkey> [--url <url> --token <token>]');
     process.exit(1);
   }
 
@@ -138,28 +139,51 @@ function handlePeersAdd(args: string[], options: CliOptions & { url?: string; to
   const token = options.token;
   const pubkey = options.pubkey;
 
-  if (!url || !token || !pubkey) {
-    console.error('Error: Missing required options. Usage: agora peers add <name> --url <url> --token <token> --pubkey <pubkey>');
+  if (!pubkey) {
+    console.error('Error: Missing required --pubkey option.');
     process.exit(1);
   }
 
-  const config = loadPeerConfig(configPath);
+  // Validate that if one of url/token is provided, both must be
+  if ((url && !token) || (!url && token)) {
+    console.error('Error: Both --url and --token must be provided together.');
+    process.exit(1);
+  }
 
-  // Add the peer (name is optional but set for clarity)
+  // Check if we have HTTP transport or relay
+  const config = loadPeerConfig(configPath);
+  const hasHttpConfig = url && token;
+  const hasRelay = config.relay;
+
+  if (!hasHttpConfig && !hasRelay) {
+    console.error('Error: Either (--url and --token) must be provided, or relay must be configured in config file.');
+    process.exit(1);
+  }
+
+  // Add the peer
   config.peers[name] = {
-    url,
-    token,
     publicKey: pubkey,
     name, // Set name to match the key for consistency
   };
 
+  if (url && token) {
+    config.peers[name].url = url;
+    config.peers[name].token = token;
+  }
+
   savePeerConfig(configPath, config);
-  output({ 
+  
+  const outputData: Record<string, unknown> = { 
     status: 'added',
     name,
-    url,
     publicKey: pubkey
-  }, options.pretty || false);
+  };
+  
+  if (url) {
+    outputData.url = url;
+  }
+  
+  output(outputData, options.pretty || false);
 }
 
 /**
@@ -268,40 +292,85 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
     messagePayload = { text: args.slice(1).join(' ') };
   }
 
-  // Create transport config
-  const transportConfig = {
-    identity: config.identity,
-    peers: new Map<string, PeerConfig>([[peer.publicKey, {
-      url: peer.url,
-      token: peer.token,
-      publicKey: peer.publicKey,
-    }]]),
-  };
+  // Determine transport method: HTTP or relay
+  const hasHttpTransport = peer.url && peer.token;
+  const hasRelay = config.relay;
 
   // Send the message
   try {
-    const result = await sendToPeer(
-      transportConfig,
-      peer.publicKey,
-      messageType,
-      messagePayload
-    );
+    if (hasHttpTransport) {
+      // Use HTTP transport (existing behavior)
+      // Non-null assertion: we know url and token are strings here
+      const transportConfig = {
+        identity: config.identity,
+        peers: new Map<string, PeerConfig>([[peer.publicKey, {
+          url: peer.url!,
+          token: peer.token!,
+          publicKey: peer.publicKey,
+        }]]),
+      };
 
-    if (result.ok) {
-      output({ 
-        status: 'sent',
-        peer: name,
-        type: messageType,
-        httpStatus: result.status
-      }, options.pretty || false);
+      const result = await sendToPeer(
+        transportConfig,
+        peer.publicKey,
+        messageType,
+        messagePayload
+      );
+
+      if (result.ok) {
+        output({ 
+          status: 'sent',
+          peer: name,
+          type: messageType,
+          transport: 'http',
+          httpStatus: result.status
+        }, options.pretty || false);
+      } else {
+        output({ 
+          status: 'failed',
+          peer: name,
+          type: messageType,
+          transport: 'http',
+          httpStatus: result.status,
+          error: result.error
+        }, options.pretty || false);
+        process.exit(1);
+      }
+    } else if (hasRelay) {
+      // Use relay transport
+      // Non-null assertion: we know relay is a string here
+      const relayConfig = {
+        identity: config.identity,
+        relayUrl: config.relay!,
+      };
+
+      const result = await sendViaRelay(
+        relayConfig,
+        peer.publicKey,
+        messageType,
+        messagePayload
+      );
+
+      if (result.ok) {
+        output({ 
+          status: 'sent',
+          peer: name,
+          type: messageType,
+          transport: 'relay'
+        }, options.pretty || false);
+      } else {
+        output({ 
+          status: 'failed',
+          peer: name,
+          type: messageType,
+          transport: 'relay',
+          error: result.error
+        }, options.pretty || false);
+        process.exit(1);
+      }
     } else {
-      output({ 
-        status: 'failed',
-        peer: name,
-        type: messageType,
-        httpStatus: result.status,
-        error: result.error
-      }, options.pretty || false);
+      // Neither HTTP nor relay available
+      console.error(`Error: Peer '${name}' unreachable. No HTTP endpoint and no relay configured.`);
       process.exit(1);
     }
   } catch (e) {
@@ -329,7 +398,14 @@ function handleDecode(args: string[], options: CliOptions): void {
   const config = loadPeerConfig(configPath);
   const peers = new Map<string, PeerConfig>();
   for (const [, val] of Object.entries(config.peers)) {
-    peers.set(val.publicKey, val);
+    // Only add peers with HTTP config to the map for decoding
+    if (val.url && val.token) {
+      peers.set(val.publicKey, {
+        url: val.url,
+        token: val.token,
+        publicKey: val.publicKey,
+      });
+    }
   }
 
   const message = args.join(' ');
@@ -405,45 +481,84 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
     },
   };
 
-  // Create transport config
-  const peers = new Map<string, PeerConfig>();
-  for (const [, peer] of Object.entries(config.peers)) {
-    peers.set(peer.publicKey, {
-      url: peer.url,
-      token: peer.token,
-      publicKey: peer.publicKey,
-    });
-  }
-
-  const transportConfig = {
-    identity: config.identity,
-    peers,
-  };
-
   // Send announce to all peers
-  const results: Array<{ peer: string; status: string; httpStatus?: number; error?: string }> = [];
+  const results: Array<{ peer: string; status: string; transport?: string; httpStatus?: number; error?: string }> = [];
 
   for (const [name, peer] of Object.entries(config.peers)) {
-    try {
-      const result = await sendToPeer(
-        transportConfig,
-        peer.publicKey,
-        'announce',
-        announcePayload
-      );
+    const hasHttpTransport = peer.url && peer.token;
+    const hasRelay = config.relay;
 
-      if (result.ok) {
-        results.push({
-          peer: name,
-          status: 'sent',
-          httpStatus: result.status,
+    try {
+      if (hasHttpTransport) {
+        // Use HTTP transport
+        const peers = new Map<string, PeerConfig>();
+        peers.set(peer.publicKey, {
+          url: peer.url!,
+          token: peer.token!,
+          publicKey: peer.publicKey,
         });
+
+        const transportConfig = {
+          identity: config.identity,
+          peers,
+        };
+
+        const result = await sendToPeer(
+          transportConfig,
+          peer.publicKey,
+          'announce',
+          announcePayload
+        );
+
+        if (result.ok) {
+          results.push({
+            peer: name,
+            status: 'sent',
+            transport: 'http',
+            httpStatus: result.status,
+          });
+        } else {
+          results.push({
+            peer: name,
+            status: 'failed',
+            transport: 'http',
+            httpStatus: result.status,
+            error: result.error,
+          });
+        }
+      } else if (hasRelay) {
+        // Use relay transport
+        const relayConfig = {
+          identity: config.identity,
+          relayUrl: config.relay!,
+        };
+
+        const result = await sendViaRelay(
+          relayConfig,
+          peer.publicKey,
+          'announce',
+          announcePayload
+        );
+
+        if (result.ok) {
+          results.push({
+            peer: name,
+            status: 'sent',
+            transport: 'relay',
+          });
+        } else {
+          results.push({
+            peer: name,
+            status: 'failed',
+            transport: 'relay',
+            error: result.error,
+          });
+        }
       } else {
         results.push({
           peer: name,
-          status: 'failed',
-          httpStatus: result.status,
-          error: result.error,
+          status: 'unreachable',
+          error: 'No HTTP endpoint and no relay configured',
         });
       }
     } catch (e) {

@@ -173,7 +173,8 @@ describe('CLI', () => {
       ]);
 
       assert.strictEqual(result.exitCode, 1);
-      assert.ok(result.stderr.includes('Missing required options'));
+      // Updated error message to reflect clearer validation ordering
+      assert.ok(result.stderr.includes('Both --url and --token must be provided together'));
     });
   });
 
