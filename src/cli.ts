@@ -10,6 +10,7 @@ import { sendViaRelay } from './transport/relay.js';
 import type { MessageType } from './message/envelope.js';
 import type { AnnouncePayload } from './registry/messages.js';
 import { PeerServer } from './peer/server.js';
+import { RelayServer } from './relay/server.js';
 
 interface CliOptions {
   config?: string;
@@ -665,6 +666,69 @@ async function handleServe(options: CliOptions & { port?: string; name?: string 
 }
 
 /**
+ * Handle the `agora relay` command.
+ * Starts a WebSocket relay server for routing messages between agents.
+ */
+async function handleRelay(options: CliOptions & { port?: string }): Promise<void> {
+  const port = parseInt(options.port || '9474', 10);
+  
+  // Validate port
+  if (isNaN(port) || port < 1 || port > 65535) {
+    console.error(`Error: Invalid port number '${options.port}'. Port must be between 1 and 65535.`);
+    process.exit(1);
+  }
+
+  // Create and configure RelayServer
+  const server = new RelayServer();
+
+  // Setup event listeners
+  server.on('agent-registered', (publicKey) => {
+    console.log(`[${new Date().toISOString()}] Agent registered: ${publicKey}`);
+  });
+
+  server.on('agent-disconnected', (publicKey) => {
+    console.log(`[${new Date().toISOString()}] Agent disconnected: ${publicKey}`);
+  });
+
+  server.on('message-relayed', (from, to, envelope) => {
+    console.log(`[${new Date().toISOString()}] Message relayed: ${from.substring(0, 16)}... → ${to.substring(0, 16)}... (type: ${envelope.type})`);
+  });
+
+  server.on('error', (error) => {
+    console.error(`[${new Date().toISOString()}] Error:`, error.message);
+  });
+
+  // Start the server
+  try {
+    await server.start(port);
+    console.log(`[${new Date().toISOString()}] Agora relay server started`);
+    console.log(`  WebSocket Port: ${port}`);
+    console.log(`  Connected agents: 0`);
+    console.log(`  Listening for agent connections...`);
+    console.log('');
+    console.log('Press Ctrl+C to stop the relay');
+
+    // Keep the process alive
+    process.on('SIGINT', async () => {
+      console.log(`\n[${new Date().toISOString()}] Shutting down relay...`);
+      await server.stop();
+      console.log('Relay stopped');
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log(`\n[${new Date().toISOString()}] Shutting down relay...`);
+      await server.stop();
+      console.log('Relay stopped');
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error('Failed to start relay:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+/**
  * Parse CLI arguments and route to appropriate handler.
  */
 async function main(): Promise<void> {
@@ -672,7 +736,7 @@ async function main(): Promise<void> {
 
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
-    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve');
+    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, relay');
     process.exit(1);
   }
 
@@ -753,8 +817,11 @@ async function main(): Promise<void> {
       case 'serve':
         await handleServe(options);
         break;
+      case 'relay':
+        await handleRelay(options);
+        break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve, relay`);
         process.exit(1);
     }
   } catch (e) {
