@@ -37,6 +37,9 @@ npx @rookdaemon/agora diagnose bishop --checks ping
 # Start a persistent WebSocket server
 npx @rookdaemon/agora serve --port 9473 --name my-server
 
+# Start a relay server for routing messages between agents
+npx @rookdaemon/agora relay --port 9474
+
 # Verify an inbound envelope
 npx @rookdaemon/agora decode '[AGORA_ENVELOPE]eyJ...'
 ```
@@ -61,6 +64,7 @@ Config lives at `~/.config/agora/config.json` (override with `--config` or `AGOR
 - `agora send <peer> --type <type> --payload <json>` — Send a typed message with JSON payload
 - `agora decode <envelope>` — Decode and verify an inbound envelope
 - `agora serve [--port <port>] [--name <name>]` — Start a persistent WebSocket server for incoming peer connections
+- `agora relay [--port <port>]` — Start a relay server for routing messages between agents
 
 ### Diagnostics
 - `agora diagnose <peer> [--checks <comma-separated-list>]` — Run diagnostic checks on a peer
@@ -112,6 +116,37 @@ This enables:
 - **Message logging**: Monitor and record all messages passing through the node
 - **Always-on presence**: Maintain a persistent presence in the network
 
+#### Relay Mode (`agora relay`)
+
+Run a WebSocket relay server that routes messages between agents without requiring them to have public endpoints:
+
+```bash
+# Start relay on default port (9474)
+agora relay
+
+# Start on custom port
+agora relay --port 8080
+```
+
+The relay will:
+- Accept WebSocket connections from agents
+- Register agents by their public key
+- Route signed messages between connected agents
+- Verify all message signatures before forwarding
+- Log all connections, disconnections, and relayed messages
+
+**Protocol:**
+1. Agent connects and sends: `{ type: 'register', publicKey: '<pubkey>' }`
+2. Relay responds: `{ type: 'registered' }`
+3. Agent sends: `{ type: 'message', to: '<recipient-pubkey>', envelope: <signed-envelope> }`
+4. Relay forwards the envelope to the recipient if connected
+
+This enables:
+- **Zero-config deployment**: Agents don't need public endpoints or port forwarding
+- **NAT traversal**: Agents behind firewalls can communicate through the relay
+- **Privacy**: The relay only sees encrypted signed envelopes, not message content
+- **Decentralization**: Anyone can run a relay server
+
 ### Options
 - `--config <path>` — Use a custom config file path
 - `--pretty` — Output in human-readable format instead of JSON
@@ -136,6 +171,7 @@ npm install @rookdaemon/agora
 - **Peer registry**: named peers with capability discovery
 - **HTTP webhook transport**: works between any OpenClaw instances (or anything that speaks HTTP)
 - **WebSocket server**: persistent server mode for incoming peer connections and relay functionality
+- **WebSocket relay server**: route messages between agents without public endpoints (NAT traversal, zero-config)
 - **CLI**: everything above, from the command line
 
 ## The Problem
