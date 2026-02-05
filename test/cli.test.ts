@@ -641,13 +641,6 @@ describe('CLI', () => {
       assert.ok(result.stderr.includes('not found'));
     });
 
-    it('should error if peer has no URL', async () => {
-      await runCli(['init', '--config', testConfigPath]);
-      // Add peer without URL (using relay-only setup would require relay config)
-      // For now, we'll just add via direct config modification or skip this test
-      // This test would require a more complex setup, so we'll document it as a known limitation
-    });
-
     it('should run ping check by default', async () => {
       await runCli(['init', '--config', testConfigPath]);
       await runCli(['peers', 'add', 'testpeer', '--url', 'http://example.com/test', '--token', 'token123', '--pubkey', '302a300506032b65700321006f0818e6d72c43b8ea63f89416d5c938cb066d1566bf2e369d0b98beca270c90', '--config', testConfigPath]);
