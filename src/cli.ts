@@ -619,10 +619,18 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
   }
 
   // Result structure
+  interface CheckResult {
+    ok: boolean;
+    latency_ms?: number;
+    error?: string;
+    implemented?: boolean;
+    [key: string]: unknown;
+  }
+  
   const result: {
     peer: string;
     status: string;
-    checks: Record<string, { ok: boolean; latency_ms?: number; error?: string; [key: string]: unknown }>;
+    checks: Record<string, CheckResult>;
     timestamp: string;
   } = {
     peer: name,
@@ -666,31 +674,27 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
 
   // Run workspace check
   if (requestedChecks.includes('workspace')) {
-    const latency = 0;
     // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
     result.checks.workspace = { 
       ok: false,
       implemented: false,
-      latency_ms: latency,
       error: 'Workspace check requires peer diagnostic protocol support' 
     };
   }
 
   // Run tools check
   if (requestedChecks.includes('tools')) {
-    const latency = 0;
     // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
     result.checks.tools = { 
       ok: false,
       implemented: false,
-      latency_ms: latency,
       error: 'Tools check requires peer diagnostic protocol support' 
     };
   }
 
   // Determine overall status - only consider implemented checks
   const implementedChecks = Object.values(result.checks).filter(
-    check => (check as { implemented?: boolean }).implemented !== false
+    check => check.implemented !== false
   );
   
   if (implementedChecks.length === 0) {
