@@ -78,6 +78,24 @@ describe('RelayServer', () => {
       let agent1Registered = false;
       let agent2Registered = false;
 
+      // Helper to send message once both agents are registered
+      const trySendMessage = (): void => {
+        if (agent1Registered && agent2Registered) {
+          const envelope = createEnvelope(
+            'publish',
+            agent1.publicKey,
+            agent1.privateKey,
+            { text: 'Hello from agent 1' }
+          );
+          
+          ws1.send(JSON.stringify({
+            type: 'message',
+            to: agent2.publicKey,
+            envelope,
+          }));
+        }
+      };
+
       // Register agent 1
       ws1.on('open', () => {
         ws1.send(JSON.stringify({ type: 'register', publicKey: agent1.publicKey }));
@@ -87,22 +105,7 @@ describe('RelayServer', () => {
         const msg = JSON.parse(data.toString());
         if (msg.type === 'registered' && !agent1Registered) {
           agent1Registered = true;
-          
-          // Once both registered, send message from agent1 to agent2
-          if (agent2Registered) {
-            const envelope = createEnvelope(
-              'publish',
-              agent1.publicKey,
-              agent1.privateKey,
-              { text: 'Hello from agent 1' }
-            );
-            
-            ws1.send(JSON.stringify({
-              type: 'message',
-              to: agent2.publicKey,
-              envelope,
-            }));
-          }
+          trySendMessage();
         }
       });
 
@@ -116,22 +119,7 @@ describe('RelayServer', () => {
         
         if (msg.type === 'registered' && !agent2Registered) {
           agent2Registered = true;
-          
-          // Once both registered, send message from agent1 to agent2
-          if (agent1Registered) {
-            const envelope = createEnvelope(
-              'publish',
-              agent1.publicKey,
-              agent1.privateKey,
-              { text: 'Hello from agent 1' }
-            );
-            
-            ws1.send(JSON.stringify({
-              type: 'message',
-              to: agent2.publicKey,
-              envelope,
-            }));
-          }
+          trySendMessage();
         } else if (msg.id) {
           // Received the relayed envelope
           assert.strictEqual(msg.sender, agent1.publicKey);

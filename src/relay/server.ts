@@ -180,8 +180,9 @@ export class RelayServer extends EventEmitter {
 
         // Unknown message type
         this.sendError(socket, `Unknown message type: ${msg.type}`);
-      } catch {
+      } catch (err) {
         // Invalid JSON or other parsing errors
+        this.emit('error', new Error(`Message parsing failed: ${err instanceof Error ? err.message : String(err)}`));
         this.sendError(socket, 'Invalid message format');
       }
     });
@@ -206,8 +207,9 @@ export class RelayServer extends EventEmitter {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'error', message }));
       }
-    } catch {
-      // Ignore errors when sending error messages
+    } catch (err) {
+      // Log errors when sending error messages, but don't propagate to avoid cascading failures
+      this.emit('error', new Error(`Failed to send error message: ${err instanceof Error ? err.message : String(err)}`));
     }
   }
 }
