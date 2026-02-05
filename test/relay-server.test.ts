@@ -334,12 +334,23 @@ describe('RelayServer', () => {
       });
 
       ws.on('close', () => {
-        // Give the server time to process the disconnection
-        setTimeout(() => {
+        // Poll for agent removal with timeout
+        const pollInterval = 10; // ms
+        const maxAttempts = 20; // 200ms total
+        let attempts = 0;
+
+        const checkRemoved = (): void => {
           const agents = server.getAgents();
-          assert.strictEqual(agents.has(agent.publicKey), false);
-          resolve();
-        }, 100);
+          if (!agents.has(agent.publicKey)) {
+            resolve();
+          } else if (++attempts >= maxAttempts) {
+            reject(new Error('Agent was not removed after disconnect'));
+          } else {
+            setTimeout(checkRemoved, pollInterval);
+          }
+        };
+
+        checkRemoved();
       });
 
       ws.on('error', reject);

@@ -708,20 +708,17 @@ async function handleRelay(options: CliOptions & { port?: string }): Promise<voi
     console.log('');
     console.log('Press Ctrl+C to stop the relay');
 
-    // Keep the process alive
-    process.on('SIGINT', async () => {
+    // Shared shutdown handler
+    const shutdown = async (): Promise<void> => {
       console.log(`\n[${new Date().toISOString()}] Shutting down relay...`);
       await server.stop();
       console.log('Relay stopped');
       process.exit(0);
-    });
+    };
 
-    process.on('SIGTERM', async () => {
-      console.log(`\n[${new Date().toISOString()}] Shutting down relay...`);
-      await server.stop();
-      console.log('Relay stopped');
-      process.exit(0);
-    });
+    // Keep the process alive
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   } catch (error) {
     console.error('Failed to start relay:', error instanceof Error ? error.message : String(error));
     process.exit(1);

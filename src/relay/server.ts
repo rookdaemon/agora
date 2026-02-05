@@ -40,14 +40,21 @@ export class RelayServer extends EventEmitter {
     return new Promise((resolve, reject) => {
       try {
         this.wss = new WebSocketServer({ port });
+        let resolved = false;
 
         this.wss.on('error', (error) => {
           this.emit('error', error);
-          reject(error);
+          if (!resolved) {
+            resolved = true;
+            reject(error);
+          }
         });
 
         this.wss.on('listening', () => {
-          resolve();
+          if (!resolved) {
+            resolved = true;
+            resolve();
+          }
         });
 
         this.wss.on('connection', (socket: WebSocket) => {
