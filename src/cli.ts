@@ -575,6 +575,141 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
 }
 
 /**
+ * Handle the `agora diagnose` command.
+ * Run diagnostic checks on a peer (ping, workspace, tools).
+ */
+async function handleDiagnose(args: string[], options: CliOptions & { checks?: string }): Promise<void> {
+  if (args.length < 1) {
+    console.error('Error: Missing peer name. Usage: agora diagnose <name> [--checks <comma-separated-list>]');
+    process.exit(1);
+  }
+
+  const name = args[0];
+  const configPath = getConfigPath(options);
+
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+
+  if (!config.peers[name]) {
+    console.error(`Error: Peer '${name}' not found.`);
+    process.exit(1);
+  }
+
+  const peer = config.peers[name];
+
+  if (!peer.url) {
+    console.error(`Error: Peer '${name}' has no URL configured. Cannot diagnose.`);
+    process.exit(1);
+  }
+
+  // Parse checks parameter
+  const checksParam = options.checks || 'ping';
+  const requestedChecks = checksParam.split(',').map(c => c.trim());
+  
+  // Validate check types
+  const validChecks = ['ping', 'workspace', 'tools'];
+  for (const check of requestedChecks) {
+    if (!validChecks.includes(check)) {
+      console.error(`Error: Invalid check type '${check}'. Valid checks: ${validChecks.join(', ')}`);
+      process.exit(1);
+    }
+  }
+
+  // Result structure
+  interface CheckResult {
+    ok: boolean;
+    latency_ms?: number;
+    error?: string;
+    implemented?: boolean;
+    [key: string]: unknown;
+  }
+  
+  const result: {
+    peer: string;
+    status: string;
+    checks: Record<string, CheckResult>;
+    timestamp: string;
+  } = {
+    peer: name,
+    status: 'unknown',
+    checks: {},
+    timestamp: new Date().toISOString(),
+  };
+
+  // Run ping check
+  if (requestedChecks.includes('ping')) {
+    const startTime = Date.now();
+    try {
+      // Add timeout to prevent hanging on unreachable peers
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(peer.url, {
+        method: 'GET',
+        headers: peer.token ? { 'Authorization': `Bearer ${peer.token}` } : {},
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeout);
+      const latency = Date.now() - startTime;
+      
+      if (response.ok || response.status === 404 || response.status === 405) {
+        // 404 or 405 means the endpoint exists but GET isn't supported - that's OK for a ping
+        result.checks.ping = { ok: true, latency_ms: latency };
+      } else {
+        result.checks.ping = { ok: false, latency_ms: latency, error: `HTTP ${response.status}` };
+      }
+    } catch (err) {
+      const latency = Date.now() - startTime;
+      result.checks.ping = { 
+        ok: false, 
+        latency_ms: latency,
+        error: err instanceof Error ? err.message : String(err) 
+      };
+    }
+  }
+
+  // Run workspace check
+  if (requestedChecks.includes('workspace')) {
+    // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
+    result.checks.workspace = { 
+      ok: false,
+      implemented: false,
+      error: 'Workspace check requires peer diagnostic protocol support' 
+    };
+  }
+
+  // Run tools check
+  if (requestedChecks.includes('tools')) {
+    // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
+    result.checks.tools = { 
+      ok: false,
+      implemented: false,
+      error: 'Tools check requires peer diagnostic protocol support' 
+    };
+  }
+
+  // Determine overall status - only consider implemented checks
+  const implementedChecks = Object.values(result.checks).filter(
+    check => check.implemented !== false
+  );
+  
+  if (implementedChecks.length === 0) {
+    result.status = 'unknown';
+  } else {
+    const allOk = implementedChecks.every(check => check.ok);
+    const anyOk = implementedChecks.some(check => check.ok);
+    result.status = allOk ? 'healthy' : anyOk ? 'degraded' : 'unhealthy';
+  }
+
+  output(result, options.pretty || false);
+}
+
+/**
  * Handle the `agora serve` command.
  * Starts a persistent WebSocket server for incoming peer connections.
  */
@@ -733,7 +868,7 @@ async function main(): Promise<void> {
 
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
-    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, relay');
+    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay');
     process.exit(1);
   }
 
@@ -751,6 +886,7 @@ async function main(): Promise<void> {
       name: { type: 'string' },
       version: { type: 'string' },
       port: { type: 'string' },
+      checks: { type: 'string' },
     },
     strict: false,
     allowPositionals: true,
@@ -760,7 +896,7 @@ async function main(): Promise<void> {
   const subcommand = parsed.positionals[1];
   const remainingArgs = parsed.positionals.slice(2);
 
-  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string; name?: string; version?: string; port?: string } = {
+  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string; name?: string; version?: string; port?: string; checks?: string } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
     type: typeof parsed.values.type === 'string' ? parsed.values.type : undefined,
@@ -771,6 +907,7 @@ async function main(): Promise<void> {
     name: typeof parsed.values.name === 'string' ? parsed.values.name : undefined,
     version: typeof parsed.values.version === 'string' ? parsed.values.version : undefined,
     port: typeof parsed.values.port === 'string' ? parsed.values.port : undefined,
+    checks: typeof parsed.values.checks === 'string' ? parsed.values.checks : undefined,
   };
 
   try {
@@ -786,6 +923,9 @@ async function main(): Promise<void> {
         break;
       case 'announce':
         await handleAnnounce(options);
+        break;
+      case 'diagnose':
+        await handleDiagnose([subcommand, ...remainingArgs].filter(Boolean), options);
         break;
       case 'peers':
         switch (subcommand) {
@@ -818,7 +958,7 @@ async function main(): Promise<void> {
         await handleRelay(options);
         break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve, relay`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay`);
         process.exit(1);
     }
   } catch (e) {
