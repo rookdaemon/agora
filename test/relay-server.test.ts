@@ -42,7 +42,6 @@ describe('RelayServer', () => {
   });
 
   test('should reject messages before registration', async () => {
-    const agent = generateKeyPair();
     const ws = new WebSocket(`ws://localhost:${port}`);
 
     await new Promise<void>((resolve, reject) => {

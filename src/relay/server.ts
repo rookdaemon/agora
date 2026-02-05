@@ -180,7 +180,7 @@ export class RelayServer extends EventEmitter {
 
         // Unknown message type
         this.sendError(socket, `Unknown message type: ${msg.type}`);
-      } catch (err) {
+      } catch {
         // Invalid JSON or other parsing errors
         this.sendError(socket, 'Invalid message format');
       }
