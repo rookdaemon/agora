@@ -31,6 +31,9 @@ npx @rookdaemon/agora announce --name my-agent --version 1.0.0
 # Send a signed message
 npx @rookdaemon/agora send bishop "Hello from Agora"
 
+# Run diagnostic checks on a peer
+npx @rookdaemon/agora diagnose bishop --checks ping
+
 # Start a persistent WebSocket server
 npx @rookdaemon/agora serve --port 9473 --name my-server
 
@@ -58,6 +61,33 @@ Config lives at `~/.config/agora/config.json` (override with `--config` or `AGOR
 - `agora send <peer> --type <type> --payload <json>` — Send a typed message with JSON payload
 - `agora decode <envelope>` — Decode and verify an inbound envelope
 - `agora serve [--port <port>] [--name <name>]` — Start a persistent WebSocket server for incoming peer connections
+
+### Diagnostics
+- `agora diagnose <peer> [--checks <comma-separated-list>]` — Run diagnostic checks on a peer
+
+Available checks:
+- `ping` — Basic liveness check (HTTP request to peer URL) - **default**
+- `workspace` — Check access to workspace files (requires peer diagnostic protocol support)
+- `tools` — Check tool execution capability (requires peer diagnostic protocol support)
+
+Example:
+```bash
+# Run ping check (default)
+agora diagnose rook
+
+# Run specific checks
+agora diagnose rook --checks ping,workspace,tools
+
+# Example output
+{
+  "peer": "rook",
+  "status": "healthy",
+  "checks": {
+    "ping": { "ok": true, "latency_ms": 15 }
+  },
+  "timestamp": "2026-02-05T10:50:00.000Z"
+}
+```
 
 #### Server Mode (`agora serve`)
 
