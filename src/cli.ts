@@ -635,10 +635,17 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
   if (requestedChecks.includes('ping')) {
     const startTime = Date.now();
     try {
+      // Add timeout to prevent hanging on unreachable peers
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(peer.url, {
         method: 'GET',
         headers: peer.token ? { 'Authorization': `Bearer ${peer.token}` } : {},
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeout);
       const latency = Date.now() - startTime;
       
       if (response.ok || response.status === 404 || response.status === 405) {
@@ -659,52 +666,40 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
 
   // Run workspace check
   if (requestedChecks.includes('workspace')) {
-    const startTime = Date.now();
-    try {
-      // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
-      // For now, we'll just mark it as not implemented
-      const latency = Date.now() - startTime;
-      result.checks.workspace = { 
-        ok: false, 
-        latency_ms: latency,
-        error: 'Workspace check requires peer diagnostic protocol support' 
-      };
-    } catch (err) {
-      const latency = Date.now() - startTime;
-      result.checks.workspace = { 
-        ok: false, 
-        latency_ms: latency,
-        error: err instanceof Error ? err.message : String(err) 
-      };
-    }
+    const latency = 0;
+    // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
+    result.checks.workspace = { 
+      ok: false,
+      implemented: false,
+      latency_ms: latency,
+      error: 'Workspace check requires peer diagnostic protocol support' 
+    };
   }
 
   // Run tools check
   if (requestedChecks.includes('tools')) {
-    const startTime = Date.now();
-    try {
-      // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
-      // For now, we'll just mark it as not implemented
-      const latency = Date.now() - startTime;
-      result.checks.tools = { 
-        ok: false, 
-        latency_ms: latency,
-        error: 'Tools check requires peer diagnostic protocol support' 
-      };
-    } catch (err) {
-      const latency = Date.now() - startTime;
-      result.checks.tools = { 
-        ok: false, 
-        latency_ms: latency,
-        error: err instanceof Error ? err.message : String(err) 
-      };
-    }
+    const latency = 0;
+    // This is a placeholder - actual implementation would depend on peer's diagnostic protocol
+    result.checks.tools = { 
+      ok: false,
+      implemented: false,
+      latency_ms: latency,
+      error: 'Tools check requires peer diagnostic protocol support' 
+    };
   }
 
-  // Determine overall status
-  const allOk = Object.values(result.checks).every(check => check.ok);
-  const anyOk = Object.values(result.checks).some(check => check.ok);
-  result.status = allOk ? 'healthy' : anyOk ? 'degraded' : 'unhealthy';
+  // Determine overall status - only consider implemented checks
+  const implementedChecks = Object.values(result.checks).filter(
+    check => (check as { implemented?: boolean }).implemented !== false
+  );
+  
+  if (implementedChecks.length === 0) {
+    result.status = 'unknown';
+  } else {
+    const allOk = implementedChecks.every(check => check.ok);
+    const anyOk = implementedChecks.some(check => check.ok);
+    result.status = allOk ? 'healthy' : anyOk ? 'degraded' : 'unhealthy';
+  }
 
   output(result, options.pretty || false);
 }
