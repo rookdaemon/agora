@@ -1,16 +1,20 @@
 import WebSocket from 'ws';
 import { createEnvelope, type Envelope, type MessageType } from '../message/envelope.js';
+import type { RelayClient } from '../relay/client.js';
 
 export interface RelayTransportConfig {
   /** This agent's keypair */
   identity: { publicKey: string; privateKey: string };
   /** Relay server WebSocket URL (e.g., wss://agora-relay.lbsa71.net) */
   relayUrl: string;
+  /** Optional persistent relay client (if provided, will use it instead of connect-per-message) */
+  relayClient?: RelayClient;
 }
 
 /**
  * Send a signed envelope to a peer via relay server.
- * Connects to relay, registers, sends message, and disconnects.
+ * If a persistent relayClient is provided in the config, uses that.
+ * Otherwise, connects to relay, registers, sends message, and disconnects.
  */
 export async function sendViaRelay(
   config: RelayTransportConfig,
@@ -19,6 +23,19 @@ export async function sendViaRelay(
   payload: unknown,
   inReplyTo?: string
 ): Promise<{ ok: boolean; error?: string }> {
+  // If a persistent relay client is available, use it
+  if (config.relayClient && config.relayClient.connected()) {
+    const envelope = createEnvelope(
+      type,
+      config.identity.publicKey,
+      config.identity.privateKey,
+      payload,
+      inReplyTo
+    );
+    return config.relayClient.send(peerPublicKey, envelope);
+  }
+
+  // Otherwise, fall back to connect-per-message
   return new Promise((resolve) => {
     const ws = new WebSocket(config.relayUrl);
     let registered = false;

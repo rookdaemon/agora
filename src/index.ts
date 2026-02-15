@@ -8,3 +8,5 @@ export * from './message/types/paper-discovery.js';
 export * from './transport/http.js';
 export * from './transport/peer-config.js';
 export * from './relay/server.js';
+export * from './relay/client.js';
+export * from './relay/types.js';

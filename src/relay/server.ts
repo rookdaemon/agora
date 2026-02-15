@@ -8,6 +8,8 @@ import { verifyEnvelope, type Envelope } from '../message/envelope.js';
 interface ConnectedAgent {
   /** Agent's public key */
   publicKey: string;
+  /** Optional agent name */
+  name?: string;
   /** WebSocket connection */
   socket: WebSocket;
 }
@@ -119,17 +121,30 @@ export class RelayServer extends EventEmitter {
           }
 
           const publicKey = msg.publicKey;
+          const name = msg.name;
           agentPublicKey = publicKey;
           const agent: ConnectedAgent = {
             publicKey,
+            name,
             socket,
           };
 
           this.agents.set(publicKey, agent);
           this.emit('agent-registered', publicKey);
 
-          // Send registration confirmation
-          socket.send(JSON.stringify({ type: 'registered' }));
+          // Send registration confirmation with list of online peers
+          const peers = Array.from(this.agents.values())
+            .filter(a => a.publicKey !== publicKey)
+            .map(a => ({ publicKey: a.publicKey, name: a.name }));
+          
+          socket.send(JSON.stringify({ 
+            type: 'registered',
+            publicKey,
+            peers,
+          }));
+
+          // Notify other agents that this agent is now online
+          this.broadcastPeerEvent('peer_online', publicKey, name);
           return;
         }
 
@@ -174,14 +189,27 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          // Forward envelope to recipient
+          // Forward envelope to recipient wrapped in relay message format
           try {
-            recipient.socket.send(JSON.stringify(envelope));
+            const senderAgent = this.agents.get(agentPublicKey);
+            const relayMessage = {
+              type: 'message',
+              from: agentPublicKey,
+              name: senderAgent?.name,
+              envelope,
+            };
+            recipient.socket.send(JSON.stringify(relayMessage));
             this.emit('message-relayed', agentPublicKey, msg.to, envelope);
           } catch (err) {
             this.sendError(socket, 'Failed to relay message');
             this.emit('error', err as Error);
           }
+          return;
+        }
+
+        // Handle ping
+        if (msg.type === 'ping') {
+          socket.send(JSON.stringify({ type: 'pong' }));
           return;
         }
 
@@ -196,8 +224,13 @@ export class RelayServer extends EventEmitter {
 
     socket.on('close', () => {
       if (agentPublicKey) {
+        const agent = this.agents.get(agentPublicKey);
+        const agentName = agent?.name;
         this.agents.delete(agentPublicKey);
         this.emit('agent-disconnected', agentPublicKey);
+        
+        // Notify other agents that this agent went offline
+        this.broadcastPeerEvent('peer_offline', agentPublicKey, agentName);
       }
     });
 
@@ -217,6 +250,29 @@ export class RelayServer extends EventEmitter {
     } catch (err) {
       // Log errors when sending error messages, but don't propagate to avoid cascading failures
       this.emit('error', new Error(`Failed to send error message: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  }
+
+  /**
+   * Broadcast a peer event to all connected agents
+   */
+  private broadcastPeerEvent(eventType: 'peer_online' | 'peer_offline', publicKey: string, name?: string): void {
+    const message = {
+      type: eventType,
+      publicKey,
+      name,
+    };
+    const messageStr = JSON.stringify(message);
+
+    for (const agent of this.agents.values()) {
+      // Don't send the event to the agent it's about
+      if (agent.publicKey !== publicKey && agent.socket.readyState === WebSocket.OPEN) {
+        try {
+          agent.socket.send(messageStr);
+        } catch (err) {
+          this.emit('error', new Error(`Failed to send ${eventType} event: ${err instanceof Error ? err.message : String(err)}`));
+        }
+      }
     }
   }
 }

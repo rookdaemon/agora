@@ -448,6 +448,7 @@ function handleStatus(options: CliOptions): void {
   output({
     identity: config.identity.publicKey,
     configPath,
+    relay: config.relay || 'not configured',
     peerCount,
     peers: Object.keys(config.peers),
   }, options.pretty || false);
