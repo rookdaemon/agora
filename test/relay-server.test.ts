@@ -35,6 +35,7 @@ describe('RelayServer', () => {
           ws.close();
           resolve();
         }
+        // Ignore peer_online/peer_offline events
       });
 
       ws.on('error', reject);
@@ -107,6 +108,7 @@ describe('RelayServer', () => {
           agent1Registered = true;
           trySendMessage();
         }
+        // Ignore other messages like peer_online
       });
 
       // Register agent 2
@@ -120,11 +122,13 @@ describe('RelayServer', () => {
         if (msg.type === 'registered' && !agent2Registered) {
           agent2Registered = true;
           trySendMessage();
-        } else if (msg.id) {
-          // Received the relayed envelope
-          assert.strictEqual(msg.sender, agent1.publicKey);
-          assert.strictEqual(msg.type, 'publish');
-          assert.deepStrictEqual(msg.payload, { text: 'Hello from agent 1' });
+        } else if (msg.type === 'message') {
+          // Received the relayed message in new format
+          assert.strictEqual(msg.from, agent1.publicKey);
+          assert.ok(msg.envelope);
+          assert.strictEqual(msg.envelope.sender, agent1.publicKey);
+          assert.strictEqual(msg.envelope.type, 'publish');
+          assert.deepStrictEqual(msg.envelope.payload, { text: 'Hello from agent 1' });
           
           ws1.close();
           ws2.close();
