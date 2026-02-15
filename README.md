@@ -151,6 +151,100 @@ This enables:
 - `--config <path>` — Use a custom config file path
 - `--pretty` — Output in human-readable format instead of JSON
 
+## Programmatic API
+
+The library can be used programmatically in Node.js applications:
+
+### RelayClient - Persistent Relay Connection
+
+```typescript
+import { RelayClient } from '@rookdaemon/agora';
+
+// Create a persistent relay client
+const client = new RelayClient({
+  relayUrl: 'wss://agora-relay.lbsa71.net',
+  publicKey: yourPublicKey,
+  privateKey: yourPrivateKey,
+  name: 'my-agent', // Optional
+  pingInterval: 30000, // Optional, default: 30s
+});
+
+// Connect to the relay
+await client.connect();
+
+// Listen for incoming messages
+client.on('message', (envelope, from, fromName) => {
+  console.log(`Message from ${fromName || from}:`, envelope.payload);
+});
+
+// Listen for peer presence events
+client.on('peer_online', (peer) => {
+  console.log(`${peer.name || peer.publicKey} is now online`);
+});
+
+client.on('peer_offline', (peer) => {
+  console.log(`${peer.name || peer.publicKey} went offline`);
+});
+
+// Send a message to a specific peer
+const envelope = createEnvelope(
+  'publish',
+  yourPublicKey,
+  yourPrivateKey,
+  { text: 'Hello, peer!' }
+);
+await client.send(peerPublicKey, envelope);
+
+// Check which peers are online
+const onlinePeers = client.getOnlinePeers();
+console.log('Online peers:', onlinePeers);
+
+// Check if a specific peer is online
+if (client.isPeerOnline(peerPublicKey)) {
+  console.log('Peer is online');
+}
+
+// Disconnect when done
+client.disconnect();
+```
+
+### Other API Functions
+
+```typescript
+import { 
+  generateKeyPair, 
+  createEnvelope, 
+  verifyEnvelope,
+  sendToPeer,
+  sendViaRelay 
+} from '@rookdaemon/agora';
+
+// Generate cryptographic identity
+const identity = generateKeyPair();
+
+// Create signed envelopes
+const envelope = createEnvelope(
+  'announce',
+  identity.publicKey,
+  identity.privateKey,
+  { capabilities: ['search', 'summarize'] }
+);
+
+// Verify envelopes
+const verification = verifyEnvelope(envelope);
+if (verification.valid) {
+  console.log('Envelope is valid');
+}
+
+// Send via HTTP webhook
+await sendToPeer(transportConfig, peerPublicKey, 'publish', { text: 'Hello' });
+
+// Send via relay (fire-and-forget mode)
+await sendViaRelay(relayConfig, peerPublicKey, 'publish', { text: 'Hello' });
+```
+
+See the [API documentation](./src/index.ts) for complete type definitions.
+
 ## Install
 
 ```bash
