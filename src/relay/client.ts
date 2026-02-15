@@ -160,10 +160,10 @@ export class RelayClient extends EventEmitter {
         this.ws = new WebSocket(this.config.relayUrl);
         let resolved = false;
 
-        const resolveOnce = (result: () => void): void => {
+        const resolveOnce = (callback: () => void): void => {
           if (!resolved) {
             resolved = true;
-            result();
+            callback();
           }
         };
 

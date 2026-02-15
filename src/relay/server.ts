@@ -196,7 +196,7 @@ export class RelayServer extends EventEmitter {
               type: 'message',
               from: agentPublicKey,
               name: senderAgent?.name,
-              envelope: envelope,
+              envelope,
             };
             recipient.socket.send(JSON.stringify(relayMessage));
             this.emit('message-relayed', agentPublicKey, msg.to, envelope);
