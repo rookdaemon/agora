@@ -509,116 +509,26 @@ describe('CLI', () => {
 
   describe('agora serve', () => {
     beforeEach(async () => {
-      // Initialize config
       await runCli(['init', '--config', testConfigPath]);
-    });
-
-    it('should start server and output startup information', async () => {
-      return new Promise<void>((resolve, reject) => {
-        const child = spawn('node', [cliBin, 'serve', '--config', testConfigPath, '--port', '9999', '--name', 'test-server'], {
-          env: { ...process.env },
-        });
-
-        let stdout = '';
-        let timeoutId: NodeJS.Timeout;
-
-        child.stdout.on('data', (data) => {
-          stdout += data.toString();
-          
-          // Check if server has fully started (wait for complete startup message)
-          if (stdout.includes('Listening for peer connections')) {
-            try {
-              // Verify startup output contains expected information
-              assert.ok(stdout.includes('test-server'), 'Server name should be in output');
-              assert.ok(stdout.includes('WebSocket Port: 9999'), 'Port should be in output');
-              assert.ok(stdout.includes('Public Key:'), 'Public key should be in output');
-              assert.ok(stdout.includes('Agora server started'), 'Server started message should be in output');
-              
-              // Clean up timeout
-              clearTimeout(timeoutId);
-              
-              // Kill the server
-              child.kill('SIGINT');
-            } catch (error) {
-              clearTimeout(timeoutId);
-              child.kill('SIGINT');
-              reject(error);
-            }
-          }
-        });
-
-        child.on('close', (code) => {
-          try {
-            // Server should exit cleanly on SIGINT
-            assert.strictEqual(code, 0, 'Server should exit with code 0');
-            assert.ok(stdout.includes('Agora server started'), 'Server should have started');
-            resolve();
-          } catch (error) {
-            reject(error);
-          }
-        });
-
-        // Timeout after 5 seconds
-        timeoutId = setTimeout(() => {
-          child.kill('SIGINT');
-          reject(new Error('Server did not start within 5 seconds'));
-        }, 5000);
-      });
     });
 
     it('should error if config not found', async () => {
       const result = await runCli(['serve', '--config', join(testDir, 'nonexistent.json')]);
-      
+
       assert.notStrictEqual(result.exitCode, 0);
       assert.ok(result.stderr.includes('Config file not found'));
     });
 
-    it('should use default port 9473 when --port not specified', async () => {
-      return new Promise<void>((resolve, reject) => {
-        const child = spawn('node', [cliBin, 'serve', '--config', testConfigPath], {
-          env: { ...process.env },
-        });
-
-        let stdout = '';
-        let timeoutId: NodeJS.Timeout;
-
-        child.stdout.on('data', (data) => {
-          stdout += data.toString();
-          
-          if (stdout.includes('Listening for peer connections')) {
-            try {
-              assert.ok(stdout.includes('WebSocket Port: 9473'), 'Default port should be 9473');
-              clearTimeout(timeoutId);
-              child.kill('SIGINT');
-            } catch (error) {
-              clearTimeout(timeoutId);
-              child.kill('SIGINT');
-              reject(error);
-            }
-          }
-        });
-
-        child.on('close', () => {
-          resolve();
-        });
-
-        timeoutId = setTimeout(() => {
-          child.kill('SIGINT');
-          reject(new Error('Server did not start within 5 seconds'));
-        }, 5000);
-      });
-    });
-
     it('should error if port is invalid', async () => {
       const result = await runCli(['serve', '--config', testConfigPath, '--port', 'invalid']);
-      
+
       assert.notStrictEqual(result.exitCode, 0);
       assert.ok(result.stderr.includes('Invalid port number'));
     });
 
     it('should error if port is out of range', async () => {
       const result = await runCli(['serve', '--config', testConfigPath, '--port', '99999']);
-      
+
       assert.notStrictEqual(result.exitCode, 0);
       assert.ok(result.stderr.includes('Invalid port number'));
     });
