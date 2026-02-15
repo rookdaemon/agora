@@ -207,6 +207,47 @@ export class RelayServer extends EventEmitter {
           return;
         }
 
+        // Handle broadcast: same validation as message, then forward to all other agents
+        if (msg.type === 'broadcast') {
+          if (!msg.envelope || typeof msg.envelope !== 'object') {
+            this.sendError(socket, 'Invalid broadcast: missing or invalid "envelope" field');
+            return;
+          }
+
+          const envelope = msg.envelope as Envelope;
+
+          const verification = verifyEnvelope(envelope);
+          if (!verification.valid) {
+            this.sendError(socket, `Invalid envelope: ${verification.reason || 'verification failed'}`);
+            return;
+          }
+
+          if (envelope.sender !== agentPublicKey) {
+            this.sendError(socket, 'Envelope sender does not match registered public key');
+            return;
+          }
+
+          const senderAgent = this.agents.get(agentPublicKey);
+          const relayMessage = {
+            type: 'message' as const,
+            from: agentPublicKey,
+            name: senderAgent?.name,
+            envelope,
+          };
+          const messageStr = JSON.stringify(relayMessage);
+
+          for (const agent of this.agents.values()) {
+            if (agent.publicKey !== agentPublicKey && agent.socket.readyState === WebSocket.OPEN) {
+              try {
+                agent.socket.send(messageStr);
+              } catch (err) {
+                this.emit('error', err as Error);
+              }
+            }
+          }
+          return;
+        }
+
         // Handle ping
         if (msg.type === 'ping') {
           socket.send(JSON.stringify({ type: 'pong' }));
