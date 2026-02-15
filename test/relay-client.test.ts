@@ -223,11 +223,6 @@ describe('RelayClient', () => {
       privateKey: identity.privateKey,
     });
 
-    let errorFired = false;
-    client.on('error', () => {
-      errorFired = true;
-    });
-
     try {
       await client.connect();
       assert.fail('Should have thrown connection error');
