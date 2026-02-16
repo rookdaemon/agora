@@ -4,8 +4,6 @@ import { generateKeyPair } from '../../src/identity/keypair.js';
 import { RelayServer } from '../../src/relay/server.js';
 import { RelayClient } from '../../src/relay/client.js';
 import { PeerDiscoveryService } from '../../src/discovery/peer-discovery.js';
-import { createEnvelope } from '../../src/message/envelope.js';
-import type { PeerListRequestPayload, PeerListResponsePayload } from '../../src/message/types/peer-discovery.js';
 
 describe('PeerDiscovery', () => {
   describe('PeerDiscoveryService', () => {

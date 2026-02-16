@@ -13,7 +13,7 @@ import { PeerServer } from './peer/server.js';
 import { RelayServer } from './relay/server.js';
 import { RelayClient } from './relay/client.js';
 import { PeerDiscoveryService } from './discovery/peer-discovery.js';
-import { getDefaultBootstrapRelay, parseBootstrapRelay } from './discovery/bootstrap.js';
+import { getDefaultBootstrapRelay } from './discovery/bootstrap.js';
 
 interface CliOptions {
   config?: string;

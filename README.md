@@ -57,6 +57,7 @@ Config lives at `~/.config/agora/config.json` (override with `--config` or `AGOR
 - `agora peers` — List all configured peers
 - `agora peers add <name> --url <url> --token <token> --pubkey <pubkey>` — Add a new peer
 - `agora peers remove <name>` — Remove a peer
+- `agora peers discover [--relay <url>] [--relay-pubkey <key>] [--limit <n>] [--active-within <ms>] [--save]` — Discover peers via relay
 
 ### Messaging
 - `agora announce [--name <name>] [--version <version>]` — Broadcast an announce message to all peers
@@ -147,6 +148,54 @@ This enables:
 - **Privacy**: The relay only sees encrypted signed envelopes, not message content
 - **Decentralization**: Anyone can run a relay server
 
+#### Peer Discovery (`agora peers discover`)
+
+Discover other agents connected to a relay server without manual configuration:
+
+```bash
+# Discover peers using configured relay
+agora peers discover
+
+# Discover peers using custom relay
+agora peers discover --relay wss://agora-relay.example.com
+
+# Discover and save peers to config
+agora peers discover --save
+
+# Filter by activity (peers seen in last hour)
+agora peers discover --active-within 3600000
+
+# Limit number of peers returned
+agora peers discover --limit 10
+```
+
+**How it works:**
+1. Agent connects to relay server
+2. Agent sends `peer_list_request` message to relay
+3. Relay responds with list of connected agents
+4. Optionally save discovered peers to config with `--save`
+
+**Output:**
+```json
+{
+  "status": "discovered",
+  "totalPeers": 5,
+  "peersReturned": 5,
+  "relayPublicKey": "<relay-pubkey>",
+  "peers": [
+    {
+      "publicKey": "<peer-pubkey>",
+      "name": "test-agent",
+      "version": "1.0.0",
+      "lastSeen": 1705932000000
+    }
+  ]
+}
+```
+
+**Bootstrap relays:**
+If no relay is configured, the command uses a default bootstrap relay to help new agents join the network.
+
 ### Options
 - `--config <path>` — Use a custom config file path
 - `--pretty` — Output in human-readable format instead of JSON
@@ -206,6 +255,57 @@ if (client.isPeerOnline(peerPublicKey)) {
 
 // Disconnect when done
 client.disconnect();
+```
+
+### PeerDiscoveryService - Discover Peers
+
+```typescript
+import { RelayClient, PeerDiscoveryService } from '@rookdaemon/agora';
+
+// Create relay client
+const relayClient = new RelayClient({
+  relayUrl: 'wss://agora-relay.lbsa71.net',
+  publicKey: yourPublicKey,
+  privateKey: yourPrivateKey,
+});
+
+await relayClient.connect();
+
+// Create discovery service
+const discovery = new PeerDiscoveryService({
+  publicKey: yourPublicKey,
+  privateKey: yourPrivateKey,
+  relayClient,
+  relayPublicKey: relayServerPublicKey, // Optional, for verification
+});
+
+// Discover peers from relay
+const peerList = await discovery.discoverViaRelay();
+console.log(`Found ${peerList.totalPeers} peers`);
+for (const peer of peerList.peers) {
+  console.log(`- ${peer.metadata?.name || 'Unnamed'}: ${peer.publicKey}`);
+}
+
+// Discover with filters
+const activePeers = await discovery.discoverViaRelay({
+  activeWithin: 3600000, // Last hour
+  limit: 10,             // Max 10 peers
+});
+
+// Send peer referral
+await discovery.referPeer(
+  recipientPublicKey,
+  referredPeerPublicKey,
+  {
+    name: 'awesome-agent',
+    comment: 'Great at code review',
+  }
+);
+
+// Listen for referrals
+discovery.on('peer-referral', (referral, from) => {
+  console.log(`${from} referred peer: ${referral.publicKey}`);
+});
 ```
 
 ### Other API Functions
