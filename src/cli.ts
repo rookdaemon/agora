@@ -11,6 +11,9 @@ import type { MessageType } from './message/envelope.js';
 import type { AnnouncePayload } from './registry/messages.js';
 import { PeerServer } from './peer/server.js';
 import { RelayServer } from './relay/server.js';
+import { RelayClient } from './relay/client.js';
+import { PeerDiscoveryService } from './discovery/peer-discovery.js';
+import { getDefaultBootstrapRelay } from './discovery/bootstrap.js';
 
 interface CliOptions {
   config?: string;
@@ -238,6 +241,150 @@ function handlePeersRemove(args: string[], options: CliOptions): void {
     status: 'removed',
     name 
   }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora peers discover` command.
+ */
+async function handlePeersDiscover(
+  options: CliOptions & { 
+    relay?: string; 
+    'relay-pubkey'?: string;
+    limit?: string;
+    'active-within'?: string;
+    save?: boolean;
+  }
+): Promise<void> {
+  const configPath = getConfigPath(options);
+
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+
+  // Determine relay configuration
+  let relayUrl: string;
+  let relayPublicKey: string | undefined;
+
+  if (options.relay) {
+    // Use custom relay from command line
+    relayUrl = options.relay;
+    relayPublicKey = options['relay-pubkey'];
+  } else if (config.relay) {
+    // Use relay from config
+    relayUrl = config.relay;
+    // TODO: Add relayPublicKey to config schema in future
+    relayPublicKey = undefined;
+  } else {
+    // Use default bootstrap relay
+    const bootstrap = getDefaultBootstrapRelay();
+    relayUrl = bootstrap.relayUrl;
+    relayPublicKey = bootstrap.relayPublicKey;
+  }
+
+  // Parse filters
+  const filters: { activeWithin?: number; limit?: number } = {};
+  if (options['active-within']) {
+    const ms = parseInt(options['active-within'], 10);
+    if (isNaN(ms) || ms <= 0) {
+      console.error('Error: --active-within must be a positive number (milliseconds)');
+      process.exit(1);
+    }
+    filters.activeWithin = ms;
+  }
+  if (options.limit) {
+    const limit = parseInt(options.limit, 10);
+    if (isNaN(limit) || limit <= 0) {
+      console.error('Error: --limit must be a positive number');
+      process.exit(1);
+    }
+    filters.limit = limit;
+  }
+
+  // Connect to relay
+  const relayClient = new RelayClient({
+    relayUrl,
+    publicKey: config.identity.publicKey,
+    privateKey: config.identity.privateKey,
+  });
+
+  try {
+    // Connect
+    await relayClient.connect();
+
+    // Create discovery service
+    const discoveryService = new PeerDiscoveryService({
+      publicKey: config.identity.publicKey,
+      privateKey: config.identity.privateKey,
+      relayClient,
+      relayPublicKey,
+    });
+
+    // Discover peers
+    const peerList = await discoveryService.discoverViaRelay(Object.keys(filters).length > 0 ? filters : undefined);
+
+    if (!peerList) {
+      output({
+        status: 'no_response',
+        message: 'No response from relay',
+      }, options.pretty || false);
+      process.exit(1);
+    }
+
+    // Save to config if requested
+    if (options.save) {
+      let savedCount = 0;
+      for (const peer of peerList.peers) {
+        // Only save if not already in config
+        const existing = Object.values(config.peers).find(p => p.publicKey === peer.publicKey);
+        if (!existing) {
+          const peerName = peer.metadata?.name || `peer-${peer.publicKey.substring(0, 8)}`;
+          config.peers[peerName] = {
+            publicKey: peer.publicKey,
+            name: peerName,
+          };
+          savedCount++;
+        }
+      }
+      if (savedCount > 0) {
+        savePeerConfig(configPath, config);
+      }
+
+      output({
+        status: 'discovered',
+        totalPeers: peerList.totalPeers,
+        peersReturned: peerList.peers.length,
+        peersSaved: savedCount,
+        relayPublicKey: peerList.relayPublicKey,
+        peers: peerList.peers.map(p => ({
+          publicKey: p.publicKey,
+          name: p.metadata?.name,
+          version: p.metadata?.version,
+          lastSeen: p.lastSeen,
+        })),
+      }, options.pretty || false);
+    } else {
+      output({
+        status: 'discovered',
+        totalPeers: peerList.totalPeers,
+        peersReturned: peerList.peers.length,
+        relayPublicKey: peerList.relayPublicKey,
+        peers: peerList.peers.map(p => ({
+          publicKey: p.publicKey,
+          name: p.metadata?.name,
+          version: p.metadata?.version,
+          lastSeen: p.lastSeen,
+        })),
+      }, options.pretty || false);
+    }
+  } catch (e) {
+    console.error('Error discovering peers:', e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  } finally {
+    relayClient.disconnect();
+  }
 }
 
 /**
@@ -870,6 +1017,7 @@ async function main(): Promise<void> {
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
     console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay');
+    console.error('  peers subcommands: add, list, remove, discover');
     process.exit(1);
   }
 
@@ -888,6 +1036,11 @@ async function main(): Promise<void> {
       version: { type: 'string' },
       port: { type: 'string' },
       checks: { type: 'string' },
+      relay: { type: 'string' },
+      'relay-pubkey': { type: 'string' },
+      limit: { type: 'string' },
+      'active-within': { type: 'string' },
+      save: { type: 'boolean' },
     },
     strict: false,
     allowPositionals: true,
@@ -897,7 +1050,22 @@ async function main(): Promise<void> {
   const subcommand = parsed.positionals[1];
   const remainingArgs = parsed.positionals.slice(2);
 
-  const options: CliOptions & { type?: string; payload?: string; url?: string; token?: string; pubkey?: string; name?: string; version?: string; port?: string; checks?: string } = {
+  const options: CliOptions & { 
+    type?: string; 
+    payload?: string; 
+    url?: string; 
+    token?: string; 
+    pubkey?: string; 
+    name?: string; 
+    version?: string; 
+    port?: string; 
+    checks?: string;
+    relay?: string;
+    'relay-pubkey'?: string;
+    limit?: string;
+    'active-within'?: string;
+    save?: boolean;
+  } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
     type: typeof parsed.values.type === 'string' ? parsed.values.type : undefined,
@@ -909,6 +1077,11 @@ async function main(): Promise<void> {
     version: typeof parsed.values.version === 'string' ? parsed.values.version : undefined,
     port: typeof parsed.values.port === 'string' ? parsed.values.port : undefined,
     checks: typeof parsed.values.checks === 'string' ? parsed.values.checks : undefined,
+    relay: typeof parsed.values.relay === 'string' ? parsed.values.relay : undefined,
+    'relay-pubkey': typeof parsed.values['relay-pubkey'] === 'string' ? parsed.values['relay-pubkey'] : undefined,
+    limit: typeof parsed.values.limit === 'string' ? parsed.values.limit : undefined,
+    'active-within': typeof parsed.values['active-within'] === 'string' ? parsed.values['active-within'] : undefined,
+    save: typeof parsed.values.save === 'boolean' ? parsed.values.save : undefined,
   };
 
   try {
@@ -941,8 +1114,11 @@ async function main(): Promise<void> {
           case 'remove':
             handlePeersRemove(remainingArgs, options);
             break;
+          case 'discover':
+            await handlePeersDiscover(options);
+            break;
           default:
-            console.error('Error: Unknown peers subcommand. Use: add, list, remove');
+            console.error('Error: Unknown peers subcommand. Use: add, list, remove, discover');
             process.exit(1);
         }
         break;
