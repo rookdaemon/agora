@@ -4,6 +4,7 @@ export * from './registry/capability.js';
 export * from './registry/peer.js';
 export * from './registry/peer-store.js';
 export * from './registry/messages.js';
+export * from './registry/discovery-service.js';
 export * from './message/types/paper-discovery.js';
 export * from './message/types/peer-discovery.js';
 export * from './transport/http.js';

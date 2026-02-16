@@ -343,6 +343,98 @@ await sendToPeer(transportConfig, peerPublicKey, 'publish', { text: 'Hello' });
 await sendViaRelay(relayConfig, peerPublicKey, 'publish', { text: 'Hello' });
 ```
 
+### Capability Discovery
+
+Agora provides a capability discovery protocol that allows agents to announce capabilities and discover peers by capability without prior manual configuration.
+
+#### Message Types
+
+- **`capability_announce`** — Agent publishes capabilities to the network
+- **`capability_query`** — Agent queries for peers with specific capabilities  
+- **`capability_response`** — Response with matching peers
+
+#### Using DiscoveryService
+
+```typescript
+import { 
+  DiscoveryService, 
+  PeerStore, 
+  createCapability,
+  generateKeyPair 
+} from '@rookdaemon/agora';
+
+// Create identity and peer store
+const identity = generateKeyPair();
+const peerStore = new PeerStore();
+const discovery = new DiscoveryService(peerStore, identity);
+
+// Define capabilities your agent offers
+const capabilities = [
+  createCapability('ocr', '1.0.0', 'Optical character recognition', {
+    tags: ['image', 'text-extraction'],
+    inputSchema: { type: 'object', properties: { imageUrl: { type: 'string' } } },
+    outputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+  }),
+  createCapability('summarization', '2.0.0', 'Text summarization', {
+    tags: ['text', 'nlp'],
+  }),
+];
+
+// Announce capabilities to the network
+const announcement = discovery.announce(capabilities, {
+  name: 'my-agent',
+  version: '1.0.0',
+});
+// Broadcast announcement envelope to peers or relay...
+
+// Handle incoming announcements from other agents
+discovery.handleAnnounce(incomingAnnouncement);
+
+// Query for peers offering specific capabilities
+const queryPayload = discovery.query('name', 'ocr');
+const queryEnvelope = createEnvelope(
+  'capability_query',
+  identity.publicKey,
+  identity.privateKey,
+  queryPayload
+);
+// Send query to relay or peers...
+
+// Handle incoming queries
+const response = discovery.handleQuery(queryEnvelope);
+// Send response back to querying peer...
+
+// Query by tag
+const tagQuery = discovery.query('tag', 'nlp', { limit: 10 });
+
+// Prune stale peers (not seen in 1 hour)
+const removed = discovery.pruneStale(60 * 60 * 1000);
+```
+
+#### Discovery Flow Example
+
+```typescript
+// Agent A announces capabilities
+const agentA = new DiscoveryService(storeA, identityA);
+const announcement = agentA.announce([
+  createCapability('code-review', '1.0.0', 'Reviews code', { tags: ['code', 'typescript'] }),
+]);
+// Broadcast to network...
+
+// Agent B receives announcement and indexes it
+const agentB = new DiscoveryService(storeB, identityB);
+agentB.handleAnnounce(announcement);
+
+// Later, Agent B queries for 'typescript' tag
+const query = agentB.query('tag', 'typescript');
+const queryEnv = createEnvelope('capability_query', identityB.publicKey, identityB.privateKey, query);
+
+// Agent B processes its own query (could also send to relay/peers)
+const response = agentB.handleQuery(queryEnv);
+console.log('Found peers:', response.payload.peers);
+// Output: [{ publicKey: '...', capabilities: [...], metadata: {...} }]
+```
+
 See the [API documentation](./src/index.ts) for complete type definitions.
 
 ## Install
