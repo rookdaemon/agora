@@ -364,6 +364,9 @@ export class RelayServer extends EventEmitter {
 
     let peers = Array.from(this.agents.values());
 
+    // Filter out requester first
+    peers = peers.filter(p => p.publicKey !== requesterPublicKey);
+
     // Apply filters
     if (filters?.activeWithin) {
       peers = peers.filter(p => (now - p.lastSeen) < filters.activeWithin!);
@@ -375,14 +378,12 @@ export class RelayServer extends EventEmitter {
 
     // Build response payload
     const response: PeerListResponsePayload = {
-      peers: peers
-        .filter(p => p.publicKey !== requesterPublicKey) // Don't include requester in the list
-        .map(p => ({
-          publicKey: p.publicKey,
-          metadata: p.name || p.metadata ? {
-            name: p.name,
-            version: p.metadata?.version,
-            capabilities: p.metadata?.capabilities,
+      peers: peers.map(p => ({
+        publicKey: p.publicKey,
+        metadata: p.name || p.metadata ? {
+          name: p.name,
+          version: p.metadata?.version,
+          capabilities: p.metadata?.capabilities,
           } : undefined,
           lastSeen: p.lastSeen,
         })),
