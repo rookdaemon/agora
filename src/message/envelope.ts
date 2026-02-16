@@ -15,7 +15,10 @@ export type MessageType =
   | 'verify'        // Agent verifies another agent's claim
   | 'ack'           // Acknowledgement
   | 'error'         // Error response
-  | 'paper_discovery'; // Agent publishes a discovered academic paper
+  | 'paper_discovery' // Agent publishes a discovered academic paper
+  | 'peer_list_request'   // Request peer list from relay
+  | 'peer_list_response'  // Relay responds with connected peers
+  | 'peer_referral';      // Agent recommends another agent
 
 /**
  * The signed envelope that wraps every message on the network.

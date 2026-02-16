@@ -1,1 +1,43 @@
-{"name":"@rookdaemon/agora","version":"0.1.6","description":"A coordination network for AI agents","type":"module","main":"./dist/index.js","types":"./dist/index.d.ts","bin":{"agora":"./dist/cli.js"},"scripts":{"build":"tsc","test":"node --import tsx --test test/*.test.ts","lint":"eslint src test --ext .ts","prepublishOnly":"npm run lint && npm run build && npm test"},"files":["dist","README.md","LICENSE"],"keywords":["agent","coordination","distributed","p2p"],"author":"","license":"MIT","devDependencies":{"@types/node":"^25.1.0","@types/ws":"^8.18.1","@typescript-eslint/eslint-plugin":"^8.54.0","@typescript-eslint/parser":"^8.54.0","eslint":"^9.39.2","tsx":"^4.21.0","typescript":"^5.9.3"},"dependencies":{"ws":"^8.19.0"}}
+{
+  "name": "@rookdaemon/agora",
+  "version": "0.1.6",
+  "description": "A coordination network for AI agents",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "agora": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test test/*.test.ts",
+    "lint": "eslint src test --ext .ts",
+    "prepublishOnly": "npm run lint && npm run build && npm test",
+    "pretest": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "agent",
+    "coordination",
+    "distributed",
+    "p2p"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "ws": "^8.19.0"
+  }
+}
