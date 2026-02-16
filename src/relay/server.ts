@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { WebSocketServer, WebSocket } from 'ws';
-import { verifyEnvelope, type Envelope } from '../message/envelope.js';
+import { verifyEnvelope, createEnvelope, type Envelope } from '../message/envelope.js';
+import type { PeerListRequestPayload, PeerListResponsePayload } from '../message/types/peer-discovery.js';
 
 /**
  * Represents a connected agent in the relay
@@ -12,6 +13,13 @@ interface ConnectedAgent {
   name?: string;
   /** WebSocket connection */
   socket: WebSocket;
+  /** Last seen timestamp (ms) */
+  lastSeen: number;
+  /** Optional metadata */
+  metadata?: {
+    version?: string;
+    capabilities?: string[];
+  };
 }
 
 /**
@@ -34,6 +42,12 @@ export interface RelayServerEvents {
 export class RelayServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private agents = new Map<string, ConnectedAgent>();
+  private identity?: { publicKey: string; privateKey: string };
+
+  constructor(identity?: { publicKey: string; privateKey: string }) {
+    super();
+    this.identity = identity;
+  }
 
   /**
    * Start the relay server
@@ -127,6 +141,7 @@ export class RelayServer extends EventEmitter {
             publicKey,
             name,
             socket,
+            lastSeen: Date.now(),
           };
 
           this.agents.set(publicKey, agent);
@@ -182,6 +197,18 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
+          // Update lastSeen timestamp
+          const senderAgent = this.agents.get(agentPublicKey);
+          if (senderAgent) {
+            senderAgent.lastSeen = Date.now();
+          }
+
+          // Handle peer_list_request directed at relay
+          if (envelope.type === 'peer_list_request' && this.identity && msg.to === this.identity.publicKey) {
+            this.handlePeerListRequest(envelope as Envelope<PeerListRequestPayload>, socket, agentPublicKey);
+            return;
+          }
+
           // Find recipient
           const recipient = this.agents.get(msg.to);
           if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
@@ -225,6 +252,12 @@ export class RelayServer extends EventEmitter {
           if (envelope.sender !== agentPublicKey) {
             this.sendError(socket, 'Envelope sender does not match registered public key');
             return;
+          }
+
+          // Update lastSeen timestamp
+          const senderAgentBroadcast = this.agents.get(agentPublicKey);
+          if (senderAgentBroadcast) {
+            senderAgentBroadcast.lastSeen = Date.now();
           }
 
           const senderAgent = this.agents.get(agentPublicKey);
@@ -314,6 +347,70 @@ export class RelayServer extends EventEmitter {
           this.emit('error', new Error(`Failed to send ${eventType} event: ${err instanceof Error ? err.message : String(err)}`));
         }
       }
+    }
+  }
+
+  /**
+   * Handle peer list request from an agent
+   */
+  private handlePeerListRequest(envelope: Envelope<PeerListRequestPayload>, socket: WebSocket, requesterPublicKey: string): void {
+    if (!this.identity) {
+      this.sendError(socket, 'Relay does not support peer discovery (no identity configured)');
+      return;
+    }
+
+    const { filters } = envelope.payload;
+    const now = Date.now();
+
+    let peers = Array.from(this.agents.values());
+
+    // Apply filters
+    if (filters?.activeWithin) {
+      peers = peers.filter(p => (now - p.lastSeen) < filters.activeWithin!);
+    }
+
+    if (filters?.limit && filters.limit > 0) {
+      peers = peers.slice(0, filters.limit);
+    }
+
+    // Build response payload
+    const response: PeerListResponsePayload = {
+      peers: peers
+        .filter(p => p.publicKey !== requesterPublicKey) // Don't include requester in the list
+        .map(p => ({
+          publicKey: p.publicKey,
+          metadata: p.name || p.metadata ? {
+            name: p.name,
+            version: p.metadata?.version,
+            capabilities: p.metadata?.capabilities,
+          } : undefined,
+          lastSeen: p.lastSeen,
+        })),
+      totalPeers: this.agents.size - 1, // Exclude requester from count
+      relayPublicKey: this.identity.publicKey,
+    };
+
+    // Create signed envelope
+    const responseEnvelope = createEnvelope(
+      'peer_list_response',
+      this.identity.publicKey,
+      this.identity.privateKey,
+      response,
+      envelope.id // Reply to the request
+    );
+
+    // Send response
+    const relayMessage = {
+      type: 'message',
+      from: this.identity.publicKey,
+      name: 'relay',
+      envelope: responseEnvelope,
+    };
+
+    try {
+      socket.send(JSON.stringify(relayMessage));
+    } catch (err) {
+      this.emit('error', new Error(`Failed to send peer list response: ${err instanceof Error ? err.message : String(err)}`));
     }
   }
 }
