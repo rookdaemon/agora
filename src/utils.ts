@@ -4,8 +4,8 @@
  * are more distinguishable than the first 8.
  *
  * @param publicKey - The full public key hex string
- * @returns The last 8 characters of the key followed by "..."
+ * @returns "..." followed by the last 8 characters of the key
  */
 export function shortKey(publicKey: string): string {
-  return publicKey.slice(-8) + "...";
+  return "..." + publicKey.slice(-8);
 }
