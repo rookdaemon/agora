@@ -11,3 +11,5 @@ export * from './config.js';
 export * from './relay/server.js';
 export * from './relay/client.js';
 export * from './relay/types.js';
+export * from './utils.js';
+export * from './service.js';

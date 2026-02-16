@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -23,14 +24,20 @@ export interface AgoraPeerConfig {
 }
 
 /**
+ * Identity with optional display name (e.g. for relay registration).
+ */
+export interface AgoraIdentity {
+  publicKey: string;
+  privateKey: string;
+  name?: string;
+}
+
+/**
  * Canonical Agora configuration shape.
  * Use loadAgoraConfig() to load from file with normalized relay.
  */
 export interface AgoraConfig {
-  identity: {
-    publicKey: string;
-    privateKey: string;
-  };
+  identity: AgoraIdentity;
   peers: Record<string, AgoraPeerConfig>;
   relay?: RelayConfig;
 }
@@ -46,32 +53,18 @@ export function getDefaultConfigPath(): string {
 }
 
 /**
- * Load and normalize Agora configuration from a JSON file.
- * Supports relay as string (backward compat) or object { url?, autoConnect?, name?, reconnectMaxMs? }.
- *
- * @param path - Config file path; defaults to getDefaultConfigPath()
- * @returns Normalized AgoraConfig
- * @throws Error if file doesn't exist or config is invalid
+ * Parse and normalize config from a JSON object (shared by sync and async loaders).
  */
-export function loadAgoraConfig(path?: string): AgoraConfig {
-  const configPath = path ?? getDefaultConfigPath();
-
-  if (!existsSync(configPath)) {
-    throw new Error(`Config file not found at ${configPath}. Run 'npx @rookdaemon/agora init' first.`);
-  }
-
-  const content = readFileSync(configPath, 'utf-8');
-  let config: Record<string, unknown>;
-  try {
-    config = JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    throw new Error(`Invalid JSON in config file: ${configPath}`);
-  }
-
-  const identity = config.identity as AgoraConfig['identity'] | undefined;
-  if (!identity?.publicKey || !identity?.privateKey) {
+function parseConfig(config: Record<string, unknown>): AgoraConfig {
+  const rawIdentity = config.identity as Record<string, unknown> | undefined;
+  if (!rawIdentity?.publicKey || !rawIdentity?.privateKey) {
     throw new Error('Invalid config: missing identity.publicKey or identity.privateKey');
   }
+  const identity: AgoraIdentity = {
+    publicKey: rawIdentity.publicKey as string,
+    privateKey: rawIdentity.privateKey as string,
+    name: typeof rawIdentity.name === 'string' ? rawIdentity.name : undefined,
+  };
 
   const peers: Record<string, AgoraPeerConfig> = {};
   if (config.peers && typeof config.peers === 'object') {
@@ -105,8 +98,65 @@ export function loadAgoraConfig(path?: string): AgoraConfig {
   }
 
   return {
-    identity: { publicKey: identity.publicKey, privateKey: identity.privateKey },
+    identity,
     peers,
     ...(relay ? { relay } : {}),
   };
+}
+
+/**
+ * Load and normalize Agora configuration from a JSON file (sync).
+ * Supports relay as string (backward compat) or object { url?, autoConnect?, name?, reconnectMaxMs? }.
+ *
+ * @param path - Config file path; defaults to getDefaultConfigPath()
+ * @returns Normalized AgoraConfig
+ * @throws Error if file doesn't exist or config is invalid
+ */
+export function loadAgoraConfig(path?: string): AgoraConfig {
+  const configPath = path ?? getDefaultConfigPath();
+
+  if (!existsSync(configPath)) {
+    throw new Error(`Config file not found at ${configPath}. Run 'npx @rookdaemon/agora init' first.`);
+  }
+
+  const content = readFileSync(configPath, 'utf-8');
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    throw new Error(`Invalid JSON in config file: ${configPath}`);
+  }
+
+  return parseConfig(config);
+}
+
+/**
+ * Load and normalize Agora configuration from a JSON file (async).
+ *
+ * @param path - Config file path; defaults to getDefaultConfigPath()
+ * @returns Normalized AgoraConfig
+ * @throws Error if file doesn't exist or config is invalid
+ */
+export async function loadAgoraConfigAsync(path?: string): Promise<AgoraConfig> {
+  const configPath = path ?? getDefaultConfigPath();
+
+  let content: string;
+  try {
+    content = await readFile(configPath, 'utf-8');
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? (err as NodeJS.ErrnoException).code : undefined;
+    if (code === 'ENOENT') {
+      throw new Error(`Config file not found at ${configPath}. Run 'npx @rookdaemon/agora init' first.`);
+    }
+    throw err;
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    throw new Error(`Invalid JSON in config file: ${configPath}`);
+  }
+
+  return parseConfig(config);
 }
