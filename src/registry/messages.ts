@@ -50,3 +50,61 @@ export interface DiscoverResponsePayload {
     };
   }>;
 }
+
+/**
+ * Payload for 'capability_announce' messages.
+ * An agent publishes its capabilities to the network.
+ */
+export interface CapabilityAnnouncePayload {
+  /** Agent's Ed25519 public key */
+  publicKey: string;
+  /** List of capabilities offered */
+  capabilities: Capability[];
+  /** Optional metadata */
+  metadata?: {
+    name?: string;
+    version?: string;
+    lastSeen?: number;
+  };
+}
+
+/**
+ * Payload for 'capability_query' messages.
+ * An agent queries the network for peers with specific capabilities.
+ */
+export interface CapabilityQueryPayload {
+  /** Query type: by name, tag, or schema */
+  queryType: 'name' | 'tag' | 'schema';
+  /** Query value (capability name, tag, or JSON schema) */
+  query: string | object;
+  /** Optional filters */
+  filters?: {
+    /** Minimum trust score (RFC-001 integration) */
+    minTrustScore?: number;
+    /** Maximum results to return */
+    limit?: number;
+  };
+}
+
+/**
+ * Payload for 'capability_response' messages.
+ * Response to a capability_query with matching peers.
+ */
+export interface CapabilityResponsePayload {
+  /** Query ID this is responding to */
+  queryId: string;
+  /** Matching peers */
+  peers: Array<{
+    publicKey: string;
+    capabilities: Capability[];
+    metadata?: {
+      name?: string;
+      version?: string;
+      lastSeen?: number;
+    };
+    /** Trust score from RFC-001 (Phase 2b) */
+    trustScore?: number;
+  }>;
+  /** Total matching peers (may be > peers.length if limited) */
+  totalMatches: number;
+}
