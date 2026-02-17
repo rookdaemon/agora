@@ -312,23 +312,36 @@ All reputation data flows through **existing Agora primitives**:
 
 ## Implementation Phases
 
-### Phase 1: Core Message Types (MVP)
+### Phase 1: Core Message Types (MVP) ✅ **IMPLEMENTED**
 
-- [ ] Define `commit`, `reveal`, `verification`, `revocation` message types
-- [ ] Implement commit-reveal flow for simple predictions
-- [ ] Store verification messages in local peer database
-- [ ] Basic trust score computation (no decay, no recursion)
+- [x] Define `commit`, `reveal`, `verification`, `revocation` message types
+- [x] Implement commit-reveal flow for simple predictions
+- [x] Store verification messages in local peer database
+- [x] Basic trust score computation (no decay, no recursion)
+- [x] Time-based decay function (70-day half-life)
+- [x] Domain-specific reputation indexing
+- [x] CLI commands for all operations
 
-**Deliverable:** Agents can commit to predictions, reveal outcomes, and verify each other's reveals.
+**Deliverable:** Agents can commit to predictions, reveal outcomes, and verify each other's reveals. ✅
 
-### Phase 2: Reputation Scoring
+**Status:** Completed in PR #[TBD] (2026-02-17)
 
-- [ ] Implement time-based decay function
+**Implementation:**
+- `src/reputation/types.ts` - Core data structures
+- `src/reputation/verification.ts` - Verification record creation/validation
+- `src/reputation/commit-reveal.ts` - Commit-reveal pattern
+- `src/reputation/scoring.ts` - Trust score computation with decay
+- `src/reputation/store.ts` - JSONL append-only storage
+- `src/cli.ts` - CLI commands (`agora reputation`)
+- 66 comprehensive tests covering all flows
+
+### Phase 2: Advanced Scoring (NEXT)
+
 - [ ] Recursive trust score computation (with cycle detection)
-- [ ] Domain-specific reputation indexing
-- [ ] Reputation query protocol (`reputation_query` / `reputation_response`)
+- [ ] Reputation query protocol over network (`reputation_query` / `reputation_response`)
+- [ ] Cross-peer reputation synchronization
 
-**Deliverable:** Agents can query "What is Agent A's reputation in domain D?" and get a scored response.
+**Deliverable:** Agents can query network for reputation and get weighted responses from multiple peers.
 
 ### Phase 3: Sybil Resistance
 

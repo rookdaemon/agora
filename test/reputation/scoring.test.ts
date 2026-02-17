@@ -319,7 +319,6 @@ describe('Scoring', () => {
       const agent = generateKeyPair();
       const verifier1 = generateKeyPair();
       const verifier2 = generateKeyPair();
-      const verifier3 = generateKeyPair();
       
       // verifier1 makes 3 verifications
       const v1 = createVerification(

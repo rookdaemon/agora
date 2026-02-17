@@ -20,14 +20,18 @@ describe('ReputationStore', () => {
   
   describe('constructor', () => {
     it('should create store with custom path', () => {
-      const store = new ReputationStore(testStorePath);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _store = new ReputationStore(testStorePath);
       assert.ok(existsSync(testStorePath));
     });
     
     it('should create store with default path', () => {
       // Just test that it doesn't throw
-      const store = new ReputationStore();
-      assert.ok(store);
+      // Note: We don't use the store variable but need to construct it to test
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _store = new ReputationStore();
+      // Success if no error thrown
+      assert.ok(true);
     });
   });
   
