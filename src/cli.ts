@@ -15,6 +15,10 @@ import { RelayClient } from './relay/client.js';
 import { PeerDiscoveryService } from './discovery/peer-discovery.js';
 import { getDefaultBootstrapRelay } from './discovery/bootstrap.js';
 import { resolveBroadcastName } from './utils.js';
+import { ReputationStore } from './reputation/store.js';
+import { createVerification } from './reputation/verification.js';
+import { createCommit, createReveal, verifyReveal } from './reputation/commit-reveal.js';
+import { computeTrustScore, computeAllTrustScores } from './reputation/scoring.js';
 
 interface CliOptions {
   config?: string;
@@ -1018,6 +1022,284 @@ async function handleRelay(options: CliOptions & { port?: string }): Promise<voi
 }
 
 /**
+ * Handle the `agora reputation` command.
+ */
+async function handleReputation(
+  subcommand: string | undefined, 
+  args: string[], 
+  options: CliOptions & { 
+    target?: string;
+    domain?: string;
+    verdict?: string;
+    confidence?: string;
+    evidence?: string;
+    prediction?: string;
+    outcome?: string;
+    expiry?: string;
+    commitId?: string;
+    agent?: string;
+  }
+): Promise<void> {
+  const configPath = getConfigPath(options);
+  
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+  
+  const config = loadPeerConfig(configPath);
+  const store = new ReputationStore();
+  
+  switch (subcommand) {
+    case 'verify':
+      await handleReputationVerify(config, store, options);
+      break;
+    case 'commit':
+      await handleReputationCommit(config, store, args, options);
+      break;
+    case 'reveal':
+      await handleReputationReveal(config, store, options);
+      break;
+    case 'query':
+      await handleReputationQuery(config, store, options);
+      break;
+    case 'list':
+    case undefined:
+      handleReputationList(store, options);
+      break;
+    default:
+      console.error('Error: Unknown reputation subcommand. Use: verify, commit, reveal, query, list');
+      process.exit(1);
+  }
+}
+
+/**
+ * Handle the `agora reputation verify` command.
+ */
+async function handleReputationVerify(
+  config: { identity: { publicKey: string; privateKey: string } },
+  store: ReputationStore,
+  options: CliOptions & {
+    target?: string;
+    domain?: string;
+    verdict?: string;
+    confidence?: string;
+    evidence?: string;
+  }
+): Promise<void> {
+  if (!options.target || !options.domain || !options.verdict) {
+    console.error('Error: Missing required options. Usage: agora reputation verify --target <target-id> --domain <domain> --verdict <correct|incorrect|disputed> --confidence <0-1> [--evidence <url>]');
+    process.exit(1);
+  }
+  
+  // Validate verdict
+  const verdict = options.verdict as 'correct' | 'incorrect' | 'disputed';
+  if (!['correct', 'incorrect', 'disputed'].includes(verdict)) {
+    console.error('Error: Verdict must be one of: correct, incorrect, disputed');
+    process.exit(1);
+  }
+  
+  // Parse confidence (default to 1.0)
+  const confidence = options.confidence ? parseFloat(options.confidence) : 1.0;
+  if (isNaN(confidence) || confidence < 0 || confidence > 1) {
+    console.error('Error: Confidence must be a number between 0 and 1');
+    process.exit(1);
+  }
+  
+  // Create verification
+  const verification = createVerification(
+    config.identity.publicKey,
+    config.identity.privateKey,
+    options.target,
+    options.domain,
+    verdict,
+    confidence,
+    options.evidence
+  );
+  
+  // Store verification
+  store.append({ type: 'verification', data: verification });
+  
+  output({
+    status: 'verified',
+    verificationId: verification.id,
+    target: verification.target,
+    domain: verification.domain,
+    verdict: verification.verdict,
+    confidence: verification.confidence,
+  }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora reputation commit` command.
+ */
+async function handleReputationCommit(
+  config: { identity: { publicKey: string; privateKey: string } },
+  store: ReputationStore,
+  args: string[],
+  options: CliOptions & { domain?: string; expiry?: string }
+): Promise<void> {
+  if (args.length < 1 || !options.domain) {
+    console.error('Error: Missing required arguments. Usage: agora reputation commit <prediction> --domain <domain> [--expiry <seconds>]');
+    process.exit(1);
+  }
+  
+  const prediction = args[0];
+  const domain = options.domain;
+  
+  // Parse expiry (default to 24 hours)
+  const expirySeconds = options.expiry ? parseInt(options.expiry, 10) : 24 * 60 * 60;
+  if (isNaN(expirySeconds) || expirySeconds <= 0) {
+    console.error('Error: Expiry must be a positive number of seconds');
+    process.exit(1);
+  }
+  const expiryMs = expirySeconds * 1000;
+  
+  // Create commit
+  const commit = createCommit(
+    config.identity.publicKey,
+    config.identity.privateKey,
+    domain,
+    prediction,
+    expiryMs
+  );
+  
+  // Store commit
+  store.append({ type: 'commit', data: commit });
+  
+  output({
+    status: 'committed',
+    commitId: commit.id,
+    domain: commit.domain,
+    expiryTime: new Date(commit.expiry).toISOString(),
+  }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora reputation reveal` command.
+ */
+async function handleReputationReveal(
+  config: { identity: { publicKey: string; privateKey: string } },
+  store: ReputationStore,
+  options: CliOptions & {
+    commitId?: string;
+    prediction?: string;
+    outcome?: string;
+    evidence?: string;
+  }
+): Promise<void> {
+  if (!options.commitId || !options.prediction || !options.outcome) {
+    console.error('Error: Missing required options. Usage: agora reputation reveal --commit-id <id> --prediction <text> --outcome <text> [--evidence <url>]');
+    process.exit(1);
+  }
+  
+  // Look up commit
+  const commit = store.getCommitById(options.commitId);
+  if (!commit) {
+    console.error(`Error: Commit '${options.commitId}' not found`);
+    process.exit(1);
+  }
+  
+  // Check if already past expiry
+  const now = Date.now();
+  if (now < commit.expiry) {
+    const remainingSeconds = Math.floor((commit.expiry - now) / 1000);
+    console.error(`Error: Commitment has not expired yet. Wait ${remainingSeconds} more seconds.`);
+    process.exit(1);
+  }
+  
+  // Create reveal
+  const reveal = createReveal(
+    config.identity.publicKey,
+    config.identity.privateKey,
+    options.commitId,
+    options.prediction,
+    options.outcome,
+    options.evidence
+  );
+  
+  // Verify reveal matches commit
+  const verifyResult = verifyReveal(commit, reveal);
+  if (!verifyResult.valid) {
+    console.error(`Error: Reveal validation failed: ${verifyResult.reason}`);
+    process.exit(1);
+  }
+  
+  // Store reveal
+  store.append({ type: 'reveal', data: reveal });
+  
+  output({
+    status: 'revealed',
+    revealId: reveal.id,
+    commitId: reveal.commitmentId,
+    prediction: reveal.prediction,
+    outcome: reveal.outcome,
+  }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora reputation query` command.
+ */
+async function handleReputationQuery(
+  config: { identity: { publicKey: string; privateKey: string } },
+  store: ReputationStore,
+  options: CliOptions & { agent?: string; domain?: string }
+): Promise<void> {
+  if (!options.agent) {
+    console.error('Error: Missing required option. Usage: agora reputation query --agent <public-key> [--domain <domain>]');
+    process.exit(1);
+  }
+  
+  const agent = options.agent;
+  const domain = options.domain;
+  
+  // Get verifications for agent
+  const verifications = domain
+    ? store.getActiveVerificationsForAgent(agent, domain)
+    : store.getActiveVerificationsForAgent(agent);
+  
+  // Compute trust scores
+  const scores = domain
+    ? { [domain]: computeTrustScore(agent, domain, verifications) }
+    : Array.from(computeAllTrustScores(agent, verifications).entries()).reduce(
+        (acc, [d, score]) => ({ ...acc, [d]: score }),
+        {}
+      );
+  
+  output({
+    agent,
+    domain: domain || 'all',
+    verificationCount: verifications.length,
+    scores,
+    verifications: verifications.slice(0, 10), // Show first 10
+  }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora reputation list` command.
+ */
+function handleReputationList(
+  store: ReputationStore,
+  options: CliOptions
+): void {
+  const verifications = store.getActiveVerifications();
+  const commits = store.getCommits();
+  const reveals = store.getReveals();
+  const revocations = store.getRevocations();
+  
+  output({
+    summary: {
+      verifications: verifications.length,
+      commits: commits.length,
+      reveals: reveals.length,
+      revocations: revocations.length,
+    },
+    recentVerifications: verifications.slice(-5).reverse(),
+    recentCommits: commits.slice(-5).reverse(),
+  }, options.pretty || false);
+}
+
+/**
  * Parse CLI arguments and route to appropriate handler.
  */
 async function main(): Promise<void> {
@@ -1025,8 +1307,9 @@ async function main(): Promise<void> {
 
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
-    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay');
+    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay, reputation');
     console.error('  peers subcommands: add, list, remove, discover');
+    console.error('  reputation subcommands: verify, commit, reveal, query, list');
     process.exit(1);
   }
 
@@ -1050,6 +1333,17 @@ async function main(): Promise<void> {
       limit: { type: 'string' },
       'active-within': { type: 'string' },
       save: { type: 'boolean' },
+      // Reputation options
+      target: { type: 'string' },
+      domain: { type: 'string' },
+      verdict: { type: 'string' },
+      confidence: { type: 'string' },
+      evidence: { type: 'string' },
+      prediction: { type: 'string' },
+      outcome: { type: 'string' },
+      expiry: { type: 'string' },
+      'commit-id': { type: 'string' },
+      agent: { type: 'string' },
     },
     strict: false,
     allowPositionals: true,
@@ -1074,6 +1368,17 @@ async function main(): Promise<void> {
     limit?: string;
     'active-within'?: string;
     save?: boolean;
+    // Reputation options
+    target?: string;
+    domain?: string;
+    verdict?: string;
+    confidence?: string;
+    evidence?: string;
+    prediction?: string;
+    outcome?: string;
+    expiry?: string;
+    commitId?: string;
+    agent?: string;
   } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
@@ -1091,6 +1396,17 @@ async function main(): Promise<void> {
     limit: typeof parsed.values.limit === 'string' ? parsed.values.limit : undefined,
     'active-within': typeof parsed.values['active-within'] === 'string' ? parsed.values['active-within'] : undefined,
     save: typeof parsed.values.save === 'boolean' ? parsed.values.save : undefined,
+    // Reputation options
+    target: typeof parsed.values.target === 'string' ? parsed.values.target : undefined,
+    domain: typeof parsed.values.domain === 'string' ? parsed.values.domain : undefined,
+    verdict: typeof parsed.values.verdict === 'string' ? parsed.values.verdict : undefined,
+    confidence: typeof parsed.values.confidence === 'string' ? parsed.values.confidence : undefined,
+    evidence: typeof parsed.values.evidence === 'string' ? parsed.values.evidence : undefined,
+    prediction: typeof parsed.values.prediction === 'string' ? parsed.values.prediction : undefined,
+    outcome: typeof parsed.values.outcome === 'string' ? parsed.values.outcome : undefined,
+    expiry: typeof parsed.values.expiry === 'string' ? parsed.values.expiry : undefined,
+    commitId: typeof parsed.values['commit-id'] === 'string' ? parsed.values['commit-id'] : undefined,
+    agent: typeof parsed.values.agent === 'string' ? parsed.values.agent : undefined,
   };
 
   try {
@@ -1143,8 +1459,11 @@ async function main(): Promise<void> {
       case 'relay':
         await handleRelay(options);
         break;
+      case 'reputation':
+        await handleReputation(subcommand, remainingArgs, options);
+        break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay, reputation`);
         process.exit(1);
     }
   } catch (e) {
