@@ -1,39 +1,29 @@
 /**
  * Verification record creation and validation.
- * 
- * Provides functions to create and verify verification records
- * for building computational reputation.
+ * Core primitives for computational reputation.
  */
 
-import { createHash } from 'node:crypto';
-import { signMessage, verifySignature } from '../identity/keypair.js';
-import type { VerificationRecord } from './types.js';
+import { createEnvelope } from '../message/envelope.js';
+import type { VerificationRecord, RevocationRecord } from './types.js';
 
 /**
- * Deterministic JSON serialization with recursively sorted keys.
+ * Validation result for verification records.
  */
-function stableStringify(value: unknown): string {
-  if (value === null || value === undefined) return JSON.stringify(value);
-  if (typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return '[' + value.map(stableStringify).join(',') + ']';
-  }
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  const pairs = keys.map(k => JSON.stringify(k) + ':' + stableStringify((value as Record<string, unknown>)[k]));
-  return '{' + pairs.join(',') + '}';
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
 }
 
 /**
- * Creates a signed verification record.
- * 
+ * Create a verification record for another agent's output.
  * @param verifier - Public key of the verifying agent
  * @param privateKey - Private key for signing
  * @param target - ID of message/output being verified
  * @param domain - Capability domain
  * @param verdict - Verification verdict
- * @param confidence - Verifier's confidence (0-1)
+ * @param confidence - Confidence level (0-1)
  * @param evidence - Optional evidence link
- * @returns Signed verification record
+ * @returns Signed VerificationRecord
  */
 export function createVerification(
   verifier: string,
@@ -42,115 +32,179 @@ export function createVerification(
   domain: string,
   verdict: 'correct' | 'incorrect' | 'disputed',
   confidence: number,
-  evidence?: string
+  evidence?: string,
 ): VerificationRecord {
-  // Validate inputs
-  if (confidence < 0 || confidence > 1) {
-    throw new Error('Confidence must be between 0 and 1');
-  }
-
   const timestamp = Date.now();
-  
-  // Build record without signature
-  const recordWithoutSig: Omit<VerificationRecord, 'id' | 'signature'> = {
+
+  const payload: Record<string, unknown> = {
     verifier,
     target,
     domain,
     verdict,
     confidence,
-    timestamp,
   };
-  
+
   if (evidence !== undefined) {
-    recordWithoutSig.evidence = evidence;
+    payload.evidence = evidence;
   }
-  
-  // Compute content-addressed ID
-  const canonical = stableStringify(recordWithoutSig);
-  const id = createHash('sha256').update(canonical).digest('hex');
-  
-  // Sign the canonical representation
-  const signature = signMessage(canonical, privateKey);
-  
+
+  const envelope = createEnvelope('verification', verifier, privateKey, payload);
+
   return {
-    id,
-    ...recordWithoutSig,
-    signature,
+    id: envelope.id,
+    verifier,
+    target,
+    domain,
+    verdict,
+    confidence,
+    ...(evidence !== undefined ? { evidence } : {}),
+    timestamp,
+    signature: envelope.signature,
   };
 }
 
 /**
- * Validates a verification record.
- * 
- * @param record - Verification record to validate
- * @returns Array of validation errors (empty if valid)
+ * Create a revocation record to retract a prior verification.
+ * @param verifier - Public key of the agent who made the original verification
+ * @param privateKey - Private key for signing
+ * @param verificationId - ID of the verification to revoke
+ * @param reason - Reason for revocation
+ * @param evidence - Optional supporting evidence
+ * @returns Signed RevocationRecord
  */
-export function validateVerification(record: unknown): string[] {
-  const errors: string[] = [];
-  
-  if (typeof record !== 'object' || record === null) {
-    return ['Verification record must be an object'];
+export function createRevocation(
+  verifier: string,
+  privateKey: string,
+  verificationId: string,
+  reason: 'discovered_error' | 'fraud_detected' | 'methodology_flawed' | 'other',
+  evidence?: string,
+): RevocationRecord {
+  const timestamp = Date.now();
+
+  const payload: Record<string, unknown> = {
+    verifier,
+    verificationId,
+    reason,
+  };
+
+  if (evidence !== undefined) {
+    payload.evidence = evidence;
   }
-  
-  const r = record as Partial<VerificationRecord>;
-  
-  // Check required fields
-  if (typeof r.id !== 'string') {
-    errors.push('Missing or invalid field: id');
-  }
-  if (typeof r.verifier !== 'string') {
-    errors.push('Missing or invalid field: verifier');
-  }
-  if (typeof r.target !== 'string') {
-    errors.push('Missing or invalid field: target');
-  }
-  if (typeof r.domain !== 'string') {
-    errors.push('Missing or invalid field: domain');
-  }
-  if (!['correct', 'incorrect', 'disputed'].includes(r.verdict as string)) {
-    errors.push('Invalid verdict: must be correct, incorrect, or disputed');
-  }
-  if (typeof r.confidence !== 'number' || r.confidence < 0 || r.confidence > 1) {
-    errors.push('Invalid confidence: must be a number between 0 and 1');
-  }
-  if (typeof r.timestamp !== 'number') {
-    errors.push('Missing or invalid field: timestamp');
-  }
-  if (typeof r.signature !== 'string') {
-    errors.push('Missing or invalid field: signature');
-  }
-  
-  // Check optional fields
-  if (r.evidence !== undefined && typeof r.evidence !== 'string') {
-    errors.push('Invalid field: evidence must be a string');
-  }
-  
-  return errors;
+
+  const envelope = createEnvelope('revocation', verifier, privateKey, payload);
+
+  return {
+    id: envelope.id,
+    verifier,
+    verificationId,
+    reason,
+    ...(evidence !== undefined ? { evidence } : {}),
+    timestamp,
+    signature: envelope.signature,
+  };
 }
 
 /**
- * Verifies the cryptographic signature and content-address of a verification record.
- * 
- * @param record - Verification record to verify
- * @returns true if signature and ID are valid, false otherwise
+ * Validate a verification record structure.
+ * @param record - The verification record to validate
+ * @returns Validation result with errors if any
  */
-export function verifyVerification(record: VerificationRecord): boolean {
-  // Validate structure first
-  const errors = validateVerification(record);
-  if (errors.length > 0) {
-    return false;
+export function validateVerification(record: unknown): ValidationResult {
+  const errors: string[] = [];
+
+  if (!record || typeof record !== 'object') {
+    return { valid: false, errors: ['Record must be an object'] };
   }
-  
-  // Reconstruct canonical form without signature
-  const { signature, id, ...recordWithoutSig } = record;
-  const canonical = stableStringify(recordWithoutSig);
-  
-  // Verify content-addressed ID
-  const computedId = createHash('sha256').update(canonical).digest('hex');
-  if (computedId !== id) {
-    return false;
+
+  const v = record as Partial<VerificationRecord>;
+
+  if (!v.id || typeof v.id !== 'string') {
+    errors.push('Missing or invalid id');
   }
-  
-  // Verify signature
-  return verifySignature(canonical, signature, record.verifier);
+
+  if (!v.verifier || typeof v.verifier !== 'string') {
+    errors.push('Missing or invalid verifier');
+  }
+
+  if (!v.target || typeof v.target !== 'string') {
+    errors.push('Missing or invalid target');
+  }
+
+  if (!v.domain || typeof v.domain !== 'string') {
+    errors.push('Missing or invalid domain');
+  }
+
+  if (!v.verdict || !['correct', 'incorrect', 'disputed'].includes(v.verdict)) {
+    errors.push('Missing or invalid verdict (must be correct, incorrect, or disputed)');
+  }
+
+  if (typeof v.confidence !== 'number' || v.confidence < 0 || v.confidence > 1) {
+    errors.push('Missing or invalid confidence (must be number between 0 and 1)');
+  }
+
+  if (v.evidence !== undefined && typeof v.evidence !== 'string') {
+    errors.push('Invalid evidence (must be string if provided)');
+  }
+
+  if (typeof v.timestamp !== 'number' || v.timestamp <= 0) {
+    errors.push('Missing or invalid timestamp');
+  }
+
+  if (!v.signature || typeof v.signature !== 'string') {
+    errors.push('Missing or invalid signature');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
+ * Validate a revocation record structure.
+ * @param record - The revocation record to validate
+ * @returns Validation result with errors if any
+ */
+export function validateRevocation(record: unknown): ValidationResult {
+  const errors: string[] = [];
+
+  if (!record || typeof record !== 'object') {
+    return { valid: false, errors: ['Record must be an object'] };
+  }
+
+  const r = record as Partial<RevocationRecord>;
+
+  if (!r.id || typeof r.id !== 'string') {
+    errors.push('Missing or invalid id');
+  }
+
+  if (!r.verifier || typeof r.verifier !== 'string') {
+    errors.push('Missing or invalid verifier');
+  }
+
+  if (!r.verificationId || typeof r.verificationId !== 'string') {
+    errors.push('Missing or invalid verificationId');
+  }
+
+  const validReasons = ['discovered_error', 'fraud_detected', 'methodology_flawed', 'other'];
+  if (!r.reason || !validReasons.includes(r.reason)) {
+    errors.push(`Missing or invalid reason (must be one of: ${validReasons.join(', ')})`);
+  }
+
+  if (r.evidence !== undefined && typeof r.evidence !== 'string') {
+    errors.push('Invalid evidence (must be string if provided)');
+  }
+
+  if (typeof r.timestamp !== 'number' || r.timestamp <= 0) {
+    errors.push('Missing or invalid timestamp');
+  }
+
+  if (!r.signature || typeof r.signature !== 'string') {
+    errors.push('Missing or invalid signature');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
 }

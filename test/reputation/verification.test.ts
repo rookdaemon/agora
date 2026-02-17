@@ -1,263 +1,282 @@
 import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import assert from 'node:assert';
 import { generateKeyPair } from '../../src/identity/keypair.js';
 import {
   createVerification,
+  createRevocation,
   validateVerification,
-  verifyVerification,
+  validateRevocation,
 } from '../../src/reputation/verification.js';
 
 describe('Verification', () => {
   describe('createVerification', () => {
     it('should create a valid verification record', () => {
-      const verifierKeys = generateKeyPair();
+      const kp = generateKeyPair();
       const targetId = 'target-message-id';
-      
+      const domain = 'ocr';
+
       const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
+        kp.publicKey,
+        kp.privateKey,
         targetId,
-        'code_review',
+        domain,
         'correct',
-        0.95
+        0.95,
       );
-      
-      assert.strictEqual(verification.verifier, verifierKeys.publicKey);
+
+      assert.strictEqual(verification.verifier, kp.publicKey);
       assert.strictEqual(verification.target, targetId);
-      assert.strictEqual(verification.domain, 'code_review');
+      assert.strictEqual(verification.domain, domain);
       assert.strictEqual(verification.verdict, 'correct');
       assert.strictEqual(verification.confidence, 0.95);
       assert.ok(verification.id);
       assert.ok(verification.signature);
-      assert.ok(verification.timestamp);
+      assert.ok(verification.timestamp > 0);
     });
-    
-    it('should include optional evidence field', () => {
-      const verifierKeys = generateKeyPair();
-      const targetId = 'target-message-id';
-      const evidenceHash = 'evidence-hash-abc123';
-      
+
+    it('should include evidence when provided', () => {
+      const kp = generateKeyPair();
+      const evidence = 'https://example.com/verification-proof.json';
+
       const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        targetId,
-        'ocr',
-        'correct',
-        0.88,
-        evidenceHash
-      );
-      
-      assert.strictEqual(verification.evidence, evidenceHash);
-    });
-    
-    it('should throw error if confidence is out of range', () => {
-      const verifierKeys = generateKeyPair();
-      
-      assert.throws(
-        () => createVerification(
-          verifierKeys.publicKey,
-          verifierKeys.privateKey,
-          'target',
-          'domain',
-          'correct',
-          1.5
-        ),
-        /Confidence must be between 0 and 1/
-      );
-      
-      assert.throws(
-        () => createVerification(
-          verifierKeys.publicKey,
-          verifierKeys.privateKey,
-          'target',
-          'domain',
-          'correct',
-          -0.1
-        ),
-        /Confidence must be between 0 and 1/
-      );
-    });
-    
-    it('should generate content-addressed ID', () => {
-      const verifierKeys = generateKeyPair();
-      
-      const v1 = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target1',
+        kp.publicKey,
+        kp.privateKey,
+        'target',
         'domain',
         'correct',
-        0.9
+        0.9,
+        evidence,
       );
-      
-      const v2 = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target1',
+
+      assert.strictEqual(verification.evidence, evidence);
+    });
+
+    it('should not include evidence field when not provided', () => {
+      const kp = generateKeyPair();
+
+      const verification = createVerification(
+        kp.publicKey,
+        kp.privateKey,
+        'target',
         'domain',
         'correct',
-        0.9
+        0.9,
       );
-      
-      // IDs should be different (different timestamps)
-      assert.notStrictEqual(v1.id, v2.id);
+
+      assert.strictEqual(verification.evidence, undefined);
+    });
+
+    it('should support all verdict types', () => {
+      const kp = generateKeyPair();
+
+      const correct = createVerification(kp.publicKey, kp.privateKey, 't1', 'd', 'correct', 0.9);
+      assert.strictEqual(correct.verdict, 'correct');
+
+      const incorrect = createVerification(kp.publicKey, kp.privateKey, 't2', 'd', 'incorrect', 0.8);
+      assert.strictEqual(incorrect.verdict, 'incorrect');
+
+      const disputed = createVerification(kp.publicKey, kp.privateKey, 't3', 'd', 'disputed', 0.7);
+      assert.strictEqual(disputed.verdict, 'disputed');
     });
   });
-  
+
+  describe('createRevocation', () => {
+    it('should create a valid revocation record', () => {
+      const kp = generateKeyPair();
+      const verificationId = 'verification-to-revoke';
+
+      const revocation = createRevocation(
+        kp.publicKey,
+        kp.privateKey,
+        verificationId,
+        'discovered_error',
+      );
+
+      assert.strictEqual(revocation.verifier, kp.publicKey);
+      assert.strictEqual(revocation.verificationId, verificationId);
+      assert.strictEqual(revocation.reason, 'discovered_error');
+      assert.ok(revocation.id);
+      assert.ok(revocation.signature);
+      assert.ok(revocation.timestamp > 0);
+    });
+
+    it('should include evidence when provided', () => {
+      const kp = generateKeyPair();
+      const evidence = 'https://example.com/revocation-reason.json';
+
+      const revocation = createRevocation(
+        kp.publicKey,
+        kp.privateKey,
+        'verification-id',
+        'fraud_detected',
+        evidence,
+      );
+
+      assert.strictEqual(revocation.evidence, evidence);
+    });
+
+    it('should support all reason types', () => {
+      const kp = generateKeyPair();
+
+      const reasons = ['discovered_error', 'fraud_detected', 'methodology_flawed', 'other'] as const;
+      
+      for (const reason of reasons) {
+        const revocation = createRevocation(kp.publicKey, kp.privateKey, 'vid', reason);
+        assert.strictEqual(revocation.reason, reason);
+      }
+    });
+  });
+
   describe('validateVerification', () => {
     it('should validate a valid verification record', () => {
-      const verifierKeys = generateKeyPair();
-      
+      const kp = generateKeyPair();
       const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
+        kp.publicKey,
+        kp.privateKey,
         'target',
-        'code_review',
+        'domain',
         'correct',
-        0.95
+        0.95,
       );
-      
-      const errors = validateVerification(verification);
-      assert.strictEqual(errors.length, 0);
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.errors.length, 0);
     });
-    
+
     it('should reject non-object values', () => {
-      const errors = validateVerification(null);
-      assert.ok(errors.length > 0);
-      assert.ok(errors[0].includes('must be an object'));
+      const result = validateVerification(null);
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.length > 0);
     });
-    
-    it('should reject missing required fields', () => {
-      const errors = validateVerification({});
-      assert.ok(errors.length > 0);
-      assert.ok(errors.some(e => e.includes('id')));
-      assert.ok(errors.some(e => e.includes('verifier')));
-      assert.ok(errors.some(e => e.includes('target')));
-      assert.ok(errors.some(e => e.includes('domain')));
-      assert.ok(errors.some(e => e.includes('verdict')));
-      assert.ok(errors.some(e => e.includes('confidence')));
-      assert.ok(errors.some(e => e.includes('timestamp')));
-      assert.ok(errors.some(e => e.includes('signature')));
+
+    it('should reject verification without id', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      delete (verification as Partial<typeof verification>).id;
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('id')));
     });
-    
-    it('should reject invalid verdict', () => {
-      const verifierKeys = generateKeyPair();
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'domain',
-        'correct',
-        0.9
-      );
-      
-      (verification as unknown as { verdict: string }).verdict = 'invalid';
-      
-      const errors = validateVerification(verification);
-      assert.ok(errors.length > 0);
-      assert.ok(errors.some(e => e.includes('verdict')));
+
+    it('should reject verification without verifier', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      delete (verification as Partial<typeof verification>).verifier;
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('verifier')));
     });
-    
-    it('should reject invalid confidence values', () => {
-      const verifierKeys = generateKeyPair();
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'domain',
-        'correct',
-        0.9
-      );
-      
-      (verification as unknown as { confidence: number }).confidence = 1.5;
-      
-      const errors = validateVerification(verification);
-      assert.ok(errors.length > 0);
-      assert.ok(errors.some(e => e.includes('confidence')));
+
+    it('should reject verification without target', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      delete (verification as Partial<typeof verification>).target;
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('target')));
+    });
+
+    it('should reject verification without domain', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      delete (verification as Partial<typeof verification>).domain;
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('domain')));
+    });
+
+    it('should reject verification with invalid verdict', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      (verification as { verdict: string }).verdict = 'invalid';
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('verdict')));
+    });
+
+    it('should reject verification with confidence out of range', () => {
+      const kp = generateKeyPair();
+      const verification1 = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      (verification1 as { confidence: number }).confidence = 1.5;
+
+      const result1 = validateVerification(verification1);
+      assert.strictEqual(result1.valid, false);
+      assert.ok(result1.errors.some(e => e.includes('confidence')));
+
+      const verification2 = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      (verification2 as { confidence: number }).confidence = -0.1;
+
+      const result2 = validateVerification(verification2);
+      assert.strictEqual(result2.valid, false);
+      assert.ok(result2.errors.some(e => e.includes('confidence')));
+    });
+
+    it('should reject verification without timestamp', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      delete (verification as Partial<typeof verification>).timestamp;
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('timestamp')));
+    });
+
+    it('should reject verification without signature', () => {
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't', 'd', 'correct', 0.9);
+      delete (verification as Partial<typeof verification>).signature;
+
+      const result = validateVerification(verification);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('signature')));
     });
   });
-  
-  describe('verifyVerification', () => {
-    it('should verify a valid verification record', () => {
-      const verifierKeys = generateKeyPair();
-      
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'code_review',
-        'correct',
-        0.95
-      );
-      
-      const isValid = verifyVerification(verification);
-      assert.strictEqual(isValid, true);
+
+  describe('validateRevocation', () => {
+    it('should validate a valid revocation record', () => {
+      const kp = generateKeyPair();
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, 'vid', 'discovered_error');
+
+      const result = validateRevocation(revocation);
+
+      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.errors.length, 0);
     });
-    
-    it('should reject tampered payload', () => {
-      const verifierKeys = generateKeyPair();
-      
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'code_review',
-        'correct',
-        0.95
-      );
-      
-      // Tamper with the verdict
-      (verification as unknown as { verdict: string }).verdict = 'incorrect';
-      
-      const isValid = verifyVerification(verification);
-      assert.strictEqual(isValid, false);
+
+    it('should reject revocation without verificationId', () => {
+      const kp = generateKeyPair();
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, 'vid', 'discovered_error');
+      delete (revocation as Partial<typeof revocation>).verificationId;
+
+      const result = validateRevocation(revocation);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('verificationId')));
     });
-    
-    it('should reject tampered ID', () => {
-      const verifierKeys = generateKeyPair();
-      
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'code_review',
-        'correct',
-        0.95
-      );
-      
-      // Tamper with the ID
-      verification.id = 'fake-id-123';
-      
-      const isValid = verifyVerification(verification);
-      assert.strictEqual(isValid, false);
-    });
-    
-    it('should reject forged signature', () => {
-      const verifierKeys = generateKeyPair();
-      const attackerKeys = generateKeyPair();
-      
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'code_review',
-        'correct',
-        0.95
-      );
-      
-      // Replace signature with attacker's signature
-      const fakeVerification = createVerification(
-        attackerKeys.publicKey,
-        attackerKeys.privateKey,
-        'target',
-        'code_review',
-        'correct',
-        0.95
-      );
-      verification.signature = fakeVerification.signature;
-      
-      const isValid = verifyVerification(verification);
-      assert.strictEqual(isValid, false);
+
+    it('should reject revocation with invalid reason', () => {
+      const kp = generateKeyPair();
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, 'vid', 'discovered_error');
+      (revocation as { reason: string }).reason = 'invalid_reason';
+
+      const result = validateRevocation(revocation);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('reason')));
     });
   });
 });

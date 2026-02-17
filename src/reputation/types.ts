@@ -1,8 +1,6 @@
 /**
- * Core data structures for the reputation and trust layer.
- * 
- * Provides types for verification records, commit-reveal patterns,
- * and trust score computation.
+ * Core data structures for the Agora reputation layer.
+ * Implements RFC-001 Phase 1: verification primitives and basic reputation scoring.
  */
 
 /**
@@ -96,21 +94,24 @@ export interface RevealRecord {
 }
 
 /**
- * Revokes a prior verification record.
- * Used when a verifier discovers their verification was incorrect.
+ * Revocation of a prior verification.
+ * Allows verifiers to retract incorrect verifications.
  */
 export interface RevocationRecord {
   /** Content-addressed ID */
   id: string;
   
-  /** Public key of agent revoking their verification */
+  /** Public key of agent revoking the verification */
   verifier: string;
   
   /** ID of verification being revoked */
   verificationId: string;
   
   /** Reason for revocation */
-  reason: string;
+  reason: 'discovered_error' | 'fraud_detected' | 'methodology_flawed' | 'other';
+  
+  /** Optional evidence supporting revocation */
+  evidence?: string;
   
   /** Unix timestamp (ms) */
   timestamp: number;
@@ -144,32 +145,40 @@ export interface TrustScore {
 }
 
 /**
- * Query for reputation data about a specific agent.
+ * Payload for 'reputation_query' messages.
+ * Request reputation data for a specific agent and domain.
  */
-export interface ReputationQuery {
-  /** Public key of agent being queried */
+export interface ReputationQueryPayload {
+  /** Public key of agent to query */
   agent: string;
   
-  /** Optional domain filter */
-  domain?: string;
+  /** Domain to query (e.g., 'ocr', 'summarization') */
+  domain: string;
   
-  /** Maximum age of verifications to return (ms) */
-  maxAge?: number;
+  /** Optional: minimum timestamp for verifications */
+  since?: number;
 }
 
 /**
- * Response containing reputation data for an agent.
+ * Payload for 'reputation_response' messages.
+ * Response containing computed reputation data.
  */
-export interface ReputationResponse {
+export interface ReputationResponsePayload {
   /** Public key of agent */
   agent: string;
   
-  /** Domain (if filtered) */
-  domain?: string;
+  /** Domain of reputation */
+  domain: string;
   
-  /** Verification records */
-  verifications: VerificationRecord[];
+  /** Computed trust score (0-1) */
+  score: number;
   
-  /** Computed trust score (if available) */
-  trustScore?: TrustScore;
+  /** Number of verifications */
+  verificationCount: number;
+  
+  /** Most recent verification timestamp */
+  lastVerified: number;
+  
+  /** Top verifiers */
+  topVerifiers: string[];
 }

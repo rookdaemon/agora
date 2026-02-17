@@ -1,207 +1,240 @@
 /**
  * Local reputation store using JSONL (JSON Lines) format.
- * 
- * Provides append-only, crash-safe storage for reputation records.
+ * Append-only log for verification messages.
  */
 
-import { mkdir, readFile, appendFile } from 'node:fs/promises';
+import { readFileSync, appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { homedir } from 'node:os';
-import type { VerificationRecord, CommitRecord, RevealRecord, RevocationRecord } from './types.js';
+import type { VerificationRecord, CommitRecord, RevealRecord, RevocationRecord, TrustScore } from './types.js';
+import { computeTrustScore } from './scoring.js';
 
 /**
- * Union type for all storable reputation records.
+ * Entry types stored in the reputation log.
  */
-export type ReputationRecord = 
-  | ({ type: 'verification' } & VerificationRecord)
-  | ({ type: 'commit' } & CommitRecord)
-  | ({ type: 'reveal' } & RevealRecord)
-  | ({ type: 'revocation' } & RevocationRecord);
+type LogEntry = 
+  | { type: 'verification'; record: VerificationRecord }
+  | { type: 'commit'; record: CommitRecord }
+  | { type: 'reveal'; record: RevealRecord }
+  | { type: 'revocation'; record: RevocationRecord };
 
 /**
- * Default storage location for reputation data.
- */
-const DEFAULT_STORE_PATH = `${homedir()}/.local/share/agora/reputation.jsonl`;
-
-/**
- * Local reputation store with JSONL persistence.
+ * Reputation store backed by JSONL append-only log.
+ * Provides query methods for reputation data.
  */
 export class ReputationStore {
-  private path: string;
-  
-  constructor(path?: string) {
-    this.path = path ?? DEFAULT_STORE_PATH;
+  private readonly filePath: string;
+  private verifications: VerificationRecord[] = [];
+  private commits: CommitRecord[] = [];
+  private reveals: RevealRecord[] = [];
+  private revocations: RevocationRecord[] = [];
+  private revokedIds: Set<string> = new Set();
+
+  constructor(filePath: string) {
+    this.filePath = filePath;
+    this.ensureDirectory();
+    this.load();
   }
-  
+
   /**
-   * Initializes the store, creating directory if needed.
+   * Ensure the directory for the log file exists.
    */
-  async initialize(): Promise<void> {
-    const dir = dirname(this.path);
-    await mkdir(dir, { recursive: true });
-  }
-  
-  /**
-   * Appends a record to the store.
-   * 
-   * @param record - Record to append
-   */
-  async append(record: ReputationRecord): Promise<void> {
-    await this.initialize();
-    const line = JSON.stringify(record) + '\n';
-    await appendFile(this.path, line, 'utf-8');
-  }
-  
-  /**
-   * Reads all records from the store.
-   * 
-   * @returns Array of all records
-   */
-  async readAll(): Promise<ReputationRecord[]> {
-    const fs = await import('node:fs');
-    if (!fs.existsSync(this.path)) {
-      return [];
+  private ensureDirectory(): void {
+    const dir = dirname(this.filePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
     }
-    
-    const content = await readFile(this.path, 'utf-8');
-    const lines = content.split('\n').filter(line => line.trim() !== '');
-    
-    const records: ReputationRecord[] = [];
+  }
+
+  /**
+   * Load all records from the JSONL file.
+   */
+  private load(): void {
+    if (!existsSync(this.filePath)) {
+      return; // Empty store
+    }
+
+    const content = readFileSync(this.filePath, 'utf-8');
+    const lines = content.trim().split('\n').filter(line => line.length > 0);
+
     for (const line of lines) {
       try {
-        const record = JSON.parse(line) as ReputationRecord;
-        records.push(record);
-      } catch (error) {
+        const entry = JSON.parse(line) as LogEntry;
+        this.processEntry(entry);
+      } catch {
         // Skip malformed lines
-        console.warn('Failed to parse reputation record:', error);
+        console.warn(`Skipping malformed JSONL entry: ${line}`);
       }
     }
-    
-    return records;
   }
-  
+
   /**
-   * Queries verification records for a specific agent and domain.
-   * 
-   * @param agent - Public key of agent
-   * @param domain - Optional domain filter
-   * @returns Array of verification records
+   * Process a log entry and update in-memory state.
    */
-  async queryVerifications(agent: string, domain?: string): Promise<VerificationRecord[]> {
-    const records = await this.readAll();
-    
-    return records
-      .filter((r): r is { type: 'verification' } & VerificationRecord => r.type === 'verification')
-      .map(r => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { type: _type, ...verification } = r;
-        return verification;
-      })
-      .filter(v => v.target === agent || v.verifier === agent)
-      .filter(v => !domain || v.domain === domain);
+  private processEntry(entry: LogEntry): void {
+    switch (entry.type) {
+      case 'verification':
+        this.verifications.push(entry.record);
+        break;
+      case 'commit':
+        this.commits.push(entry.record);
+        break;
+      case 'reveal':
+        this.reveals.push(entry.record);
+        break;
+      case 'revocation':
+        this.revocations.push(entry.record);
+        this.revokedIds.add(entry.record.verificationId);
+        break;
+    }
   }
-  
+
   /**
-   * Queries commit records for a specific agent.
-   * 
-   * @param agent - Public key of agent
-   * @param domain - Optional domain filter
-   * @returns Array of commit records
+   * Append an entry to the JSONL log.
    */
-  async queryCommits(agent: string, domain?: string): Promise<CommitRecord[]> {
-    const records = await this.readAll();
-    
-    return records
-      .filter((r): r is { type: 'commit' } & CommitRecord => r.type === 'commit')
-      .map(r => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { type: _type, ...commit } = r;
-        return commit;
-      })
-      .filter(c => c.agent === agent)
-      .filter(c => !domain || c.domain === domain);
+  private append(entry: LogEntry): void {
+    const line = JSON.stringify(entry) + '\n';
+    appendFileSync(this.filePath, line, 'utf-8');
+    this.processEntry(entry);
   }
-  
+
   /**
-   * Queries reveal records for a specific agent.
-   * 
-   * @param agent - Public key of agent
-   * @returns Array of reveal records
+   * Add a verification record to the store.
    */
-  async queryReveals(agent: string): Promise<RevealRecord[]> {
-    const records = await this.readAll();
-    
-    return records
-      .filter((r): r is { type: 'reveal' } & RevealRecord => r.type === 'reveal')
-      .map(r => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { type: _type, ...reveal } = r;
-        return reveal;
-      })
-      .filter(r => r.agent === agent);
+  addVerification(record: VerificationRecord): void {
+    this.append({ type: 'verification', record });
   }
-  
+
   /**
-   * Queries revocation records for a specific verifier.
-   * 
-   * @param verifier - Public key of verifier
-   * @returns Array of revocation records
+   * Add a commit record to the store.
    */
-  async queryRevocations(verifier: string): Promise<RevocationRecord[]> {
-    const records = await this.readAll();
-    
-    return records
-      .filter((r): r is { type: 'revocation' } & RevocationRecord => r.type === 'revocation')
-      .map(r => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { type: _type, ...revocation } = r;
-        return revocation;
-      })
-      .filter(r => r.verifier === verifier);
+  addCommit(record: CommitRecord): void {
+    this.append({ type: 'commit', record });
   }
-  
+
   /**
-   * Gets a specific commit by ID.
-   * 
-   * @param commitId - ID of commit record
-   * @returns Commit record or undefined
+   * Add a reveal record to the store.
    */
-  async getCommit(commitId: string): Promise<CommitRecord | undefined> {
-    const records = await this.readAll();
-    
-    const commit = records
-      .filter((r): r is { type: 'commit' } & CommitRecord => r.type === 'commit')
-      .map(r => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { type: _type, ...commit } = r;
-        return commit;
-      })
-      .find(c => c.id === commitId);
-    
-    return commit;
+  addReveal(record: RevealRecord): void {
+    this.append({ type: 'reveal', record });
   }
-  
+
   /**
-   * Gets active (non-revoked) verifications for an agent.
-   * 
-   * @param agent - Public key of agent
-   * @param domain - Optional domain filter
-   * @returns Array of active verification records
+   * Add a revocation record to the store.
    */
-  async getActiveVerifications(agent: string, domain?: string): Promise<VerificationRecord[]> {
-    const verifications = await this.queryVerifications(agent, domain);
-    const revocations = await this.readAll().then(records =>
-      records
-        .filter((r): r is { type: 'revocation' } & RevocationRecord => r.type === 'revocation')
-        .map(r => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { type: _type, ...revocation } = r;
-          return revocation;
-        })
-    );
-    
-    // Filter out revoked verifications
-    const revokedIds = new Set(revocations.map(r => r.verificationId));
-    return verifications.filter(v => !revokedIds.has(v.id));
+  addRevocation(record: RevocationRecord): void {
+    this.append({ type: 'revocation', record });
   }
+
+  /**
+   * Get all verifications for a specific target (message/output).
+   */
+  getVerificationsForTarget(target: string): VerificationRecord[] {
+    return this.verifications.filter(v => v.target === target && !this.revokedIds.has(v.id));
+  }
+
+  /**
+   * Get all verifications by a specific verifier.
+   */
+  getVerificationsByVerifier(verifier: string): VerificationRecord[] {
+    return this.verifications.filter(v => v.verifier === verifier && !this.revokedIds.has(v.id));
+  }
+
+  /**
+   * Get all verifications in a specific domain.
+   */
+  getVerificationsByDomain(domain: string): VerificationRecord[] {
+    return this.verifications.filter(v => v.domain === domain && !this.revokedIds.has(v.id));
+  }
+
+  /**
+   * Get a commit by its ID.
+   */
+  getCommit(id: string): CommitRecord | undefined {
+    return this.commits.find(c => c.id === id);
+  }
+
+  /**
+   * Get all commits by an agent.
+   */
+  getCommitsByAgent(agent: string): CommitRecord[] {
+    return this.commits.filter(c => c.agent === agent);
+  }
+
+  /**
+   * Get a reveal by commitment ID.
+   */
+  getRevealByCommitment(commitmentId: string): RevealRecord | undefined {
+    return this.reveals.find(r => r.commitmentId === commitmentId);
+  }
+
+  /**
+   * Get all reveals by an agent.
+   */
+  getRevealsByAgent(agent: string): RevealRecord[] {
+    return this.reveals.filter(r => r.agent === agent);
+  }
+
+  /**
+   * Compute trust score for an agent in a domain.
+   */
+  computeTrustScore(agent: string, domain: string, currentTime?: number): TrustScore {
+    // Get all verifications where the target is from this agent
+    // This requires linking targets to agents - for now, we'll compute based on
+    // verifications targeting any outputs/messages in the domain
+    // In a real implementation, we'd need a mapping of target IDs to agent public keys
+    
+    // For Phase 1, we'll use a simpler approach: filter verifications by domain
+    // and assume the scoring function handles the rest
+    return computeTrustScore(agent, domain, this.verifications, currentTime, this.revokedIds);
+  }
+
+  /**
+   * Get all stored verifications (excluding revoked).
+   */
+  getAllVerifications(): VerificationRecord[] {
+    return this.verifications.filter(v => !this.revokedIds.has(v.id));
+  }
+
+  /**
+   * Get all stored commits.
+   */
+  getAllCommits(): CommitRecord[] {
+    return this.commits;
+  }
+
+  /**
+   * Get all stored reveals.
+   */
+  getAllReveals(): RevealRecord[] {
+    return this.reveals;
+  }
+
+  /**
+   * Get all stored revocations.
+   */
+  getAllRevocations(): RevocationRecord[] {
+    return this.revocations;
+  }
+
+  /**
+   * Check if a verification has been revoked.
+   */
+  isRevoked(verificationId: string): boolean {
+    return this.revokedIds.has(verificationId);
+  }
+
+  /**
+   * Get the file path of this store.
+   */
+  getFilePath(): string {
+    return this.filePath;
+  }
+}
+
+/**
+ * Get the default reputation store path.
+ */
+export function getDefaultStorePath(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
+  return `${homeDir}/.local/share/agora/reputation.jsonl`;
 }

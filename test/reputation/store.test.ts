@@ -1,359 +1,349 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, it, beforeEach } from 'node:test';
+import assert from 'node:assert';
+import { existsSync, unlinkSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { generateKeyPair } from '../../src/identity/keypair.js';
-import { createVerification } from '../../src/reputation/verification.js';
-import { createCommit, createReveal } from '../../src/reputation/commit-reveal.js';
 import { ReputationStore } from '../../src/reputation/store.js';
+import {
+  createVerification,
+  createRevocation,
+} from '../../src/reputation/verification.js';
+import {
+  createCommit,
+  createReveal,
+} from '../../src/reputation/commit-reveal.js';
 
 describe('ReputationStore', () => {
-  describe('initialization', () => {
-    it('should create directory if missing', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
+  const testStorePath = '/tmp/agora-test-reputation.jsonl';
+
+  beforeEach(() => {
+    // Clean up test file before each test
+    if (existsSync(testStorePath)) {
+      unlinkSync(testStorePath);
+    }
+    const dir = dirname(testStorePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+  });
+
+  describe('constructor', () => {
+    it('should create a new store with empty state', () => {
+      const store = new ReputationStore(testStorePath);
+
+      assert.strictEqual(store.getAllVerifications().length, 0);
+      assert.strictEqual(store.getAllCommits().length, 0);
+      assert.strictEqual(store.getAllReveals().length, 0);
+      assert.strictEqual(store.getAllRevocations().length, 0);
+    });
+
+    it('should create directory if it does not exist', () => {
+      const nestedPath = '/tmp/agora-test/nested/reputation.jsonl';
+      const nestedDir = dirname(nestedPath);
       
-      const store = new ReputationStore(storePath);
-      await store.initialize();
-      
-      // Directory should exist after initialization
-      const verifierKeys = generateKeyPair();
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'test',
-        'correct',
-        1.0
-      );
-      
-      await store.append({ type: 'verification', ...verification });
-      
-      const records = await store.readAll();
-      assert.strictEqual(records.length, 1);
-      
-      await rm(tmpDir, { recursive: true });
+      // Clean up if exists from previous runs
+      if (existsSync(nestedPath)) {
+        unlinkSync(nestedPath);
+      }
+
+      new ReputationStore(nestedPath);
+      assert.ok(existsSync(nestedDir));
+
+      // Clean up
+      if (existsSync(nestedPath)) {
+        unlinkSync(nestedPath);
+      }
+    });
+
+    it('should load existing data from file', () => {
+      const kp = generateKeyPair();
+      const store1 = new ReputationStore(testStorePath);
+
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+      store1.addVerification(verification);
+
+      // Create new store instance - should load from file
+      const store2 = new ReputationStore(testStorePath);
+      assert.strictEqual(store2.getAllVerifications().length, 1);
+      assert.strictEqual(store2.getAllVerifications()[0].id, verification.id);
     });
   });
-  
-  describe('append and readAll', () => {
-    it('should append and read verification records', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const verifierKeys = generateKeyPair();
-      const verification = createVerification(
-        verifierKeys.publicKey,
-        verifierKeys.privateKey,
-        'target',
-        'code_review',
-        'correct',
-        0.95
-      );
-      
-      await store.append({ type: 'verification', ...verification });
-      
-      const records = await store.readAll();
-      assert.strictEqual(records.length, 1);
-      assert.strictEqual(records[0].type, 'verification');
-      
-      const record = records[0] as { type: 'verification' } & typeof verification;
-      assert.strictEqual(record.verifier, verification.verifier);
-      assert.strictEqual(record.target, verification.target);
-      assert.strictEqual(record.domain, verification.domain);
-      
-      await rm(tmpDir, { recursive: true });
+
+  describe('addVerification', () => {
+    it('should add verification to store', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+
+      store.addVerification(verification);
+
+      const verifications = store.getAllVerifications();
+      assert.strictEqual(verifications.length, 1);
+      assert.strictEqual(verifications[0].id, verification.id);
     });
-    
-    it('should append multiple records', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const verifier1 = generateKeyPair();
-      const verifier2 = generateKeyPair();
-      
-      const v1 = createVerification(
-        verifier1.publicKey,
-        verifier1.privateKey,
-        'target1',
-        'domain1',
-        'correct',
-        1.0
-      );
-      
-      const v2 = createVerification(
-        verifier2.publicKey,
-        verifier2.privateKey,
-        'target2',
-        'domain2',
-        'incorrect',
-        0.8
-      );
-      
-      await store.append({ type: 'verification', ...v1 });
-      await store.append({ type: 'verification', ...v2 });
-      
-      const records = await store.readAll();
-      assert.strictEqual(records.length, 2);
-      
-      await rm(tmpDir, { recursive: true });
-    });
-    
-    it('should handle commits and reveals', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const agentKeys = generateKeyPair();
-      const commit = createCommit(
-        agentKeys.publicKey,
-        agentKeys.privateKey,
-        'weather',
-        'prediction',
-        1000
-      );
-      
-      const reveal = createReveal(
-        agentKeys.publicKey,
-        agentKeys.privateKey,
-        commit.id,
-        'prediction',
-        'outcome'
-      );
-      
-      await store.append({ type: 'commit', ...commit });
-      await store.append({ type: 'reveal', ...reveal });
-      
-      const records = await store.readAll();
-      assert.strictEqual(records.length, 2);
-      assert.strictEqual(records[0].type, 'commit');
-      assert.strictEqual(records[1].type, 'reveal');
-      
-      await rm(tmpDir, { recursive: true });
-    });
-    
-    it('should return empty array for non-existent store', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'nonexistent.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const records = await store.readAll();
-      assert.strictEqual(records.length, 0);
-      
-      await rm(tmpDir, { recursive: true });
+
+    it('should persist verification to file', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+
+      store.addVerification(verification);
+
+      // Verify file exists and contains data
+      assert.ok(existsSync(testStorePath));
+      const store2 = new ReputationStore(testStorePath);
+      assert.strictEqual(store2.getAllVerifications().length, 1);
     });
   });
-  
-  describe('queryVerifications', () => {
-    it('should filter verifications by agent', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const verifier = generateKeyPair();
-      const agent1 = 'agent1-pubkey';
-      const agent2 = 'agent2-pubkey';
-      
-      const v1 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent1,
-        'domain',
-        'correct',
-        1.0
-      );
-      
-      const v2 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent2,
-        'domain',
-        'correct',
-        1.0
-      );
-      
-      await store.append({ type: 'verification', ...v1 });
-      await store.append({ type: 'verification', ...v2 });
-      
-      const agent1Verifications = await store.queryVerifications(agent1);
-      assert.strictEqual(agent1Verifications.length, 1);
-      assert.strictEqual(agent1Verifications[0].target, agent1);
-      
-      await rm(tmpDir, { recursive: true });
-    });
-    
-    it('should filter verifications by domain', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const verifier = generateKeyPair();
-      const agent = 'agent-pubkey';
-      
-      const v1 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent,
-        'code_review',
-        'correct',
-        1.0
-      );
-      
-      const v2 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent,
-        'ocr',
-        'correct',
-        1.0
-      );
-      
-      await store.append({ type: 'verification', ...v1 });
-      await store.append({ type: 'verification', ...v2 });
-      
-      const codeReviewVerifications = await store.queryVerifications(agent, 'code_review');
-      assert.strictEqual(codeReviewVerifications.length, 1);
-      assert.strictEqual(codeReviewVerifications[0].domain, 'code_review');
-      
-      await rm(tmpDir, { recursive: true });
+
+  describe('addCommit', () => {
+    it('should add commit to store', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
+
+      store.addCommit(commit);
+
+      const commits = store.getAllCommits();
+      assert.strictEqual(commits.length, 1);
+      assert.strictEqual(commits[0].id, commit.id);
     });
   });
-  
-  describe('queryCommits', () => {
-    it('should filter commits by agent', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const agent1 = generateKeyPair();
-      const agent2 = generateKeyPair();
-      
-      const c1 = createCommit(
-        agent1.publicKey,
-        agent1.privateKey,
-        'weather',
-        'pred1',
-        1000
-      );
-      
-      const c2 = createCommit(
-        agent2.publicKey,
-        agent2.privateKey,
-        'weather',
-        'pred2',
-        1000
-      );
-      
-      await store.append({ type: 'commit', ...c1 });
-      await store.append({ type: 'commit', ...c2 });
-      
-      const agent1Commits = await store.queryCommits(agent1.publicKey);
-      assert.strictEqual(agent1Commits.length, 1);
-      assert.strictEqual(agent1Commits[0].agent, agent1.publicKey);
-      
-      await rm(tmpDir, { recursive: true });
-    });
-    
-    it('should filter commits by domain', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const agent = generateKeyPair();
-      
-      const c1 = createCommit(
-        agent.publicKey,
-        agent.privateKey,
-        'weather',
-        'pred1',
-        1000
-      );
-      
-      const c2 = createCommit(
-        agent.publicKey,
-        agent.privateKey,
-        'stocks',
-        'pred2',
-        1000
-      );
-      
-      await store.append({ type: 'commit', ...c1 });
-      await store.append({ type: 'commit', ...c2 });
-      
-      const weatherCommits = await store.queryCommits(agent.publicKey, 'weather');
-      assert.strictEqual(weatherCommits.length, 1);
-      assert.strictEqual(weatherCommits[0].domain, 'weather');
-      
-      await rm(tmpDir, { recursive: true });
+
+  describe('addReveal', () => {
+    it('should add reveal to store', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
+      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'prediction', 'outcome');
+
+      store.addReveal(reveal);
+
+      const reveals = store.getAllReveals();
+      assert.strictEqual(reveals.length, 1);
+      assert.strictEqual(reveals[0].id, reveal.id);
     });
   });
-  
+
+  describe('addRevocation', () => {
+    it('should add revocation to store', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, verification.id, 'discovered_error');
+
+      store.addRevocation(revocation);
+
+      const revocations = store.getAllRevocations();
+      assert.strictEqual(revocations.length, 1);
+      assert.strictEqual(revocations[0].id, revocation.id);
+    });
+
+    it('should mark verification as revoked', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+      
+      store.addVerification(verification);
+      assert.strictEqual(store.isRevoked(verification.id), false);
+
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, verification.id, 'discovered_error');
+      store.addRevocation(revocation);
+
+      assert.strictEqual(store.isRevoked(verification.id), true);
+    });
+
+    it('should exclude revoked verifications from queries', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const v1 = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+      const v2 = createVerification(kp.publicKey, kp.privateKey, 't2', 'ocr', 'correct', 0.9);
+
+      store.addVerification(v1);
+      store.addVerification(v2);
+      assert.strictEqual(store.getAllVerifications().length, 2);
+
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, v1.id, 'discovered_error');
+      store.addRevocation(revocation);
+
+      // Should only return non-revoked verification
+      assert.strictEqual(store.getAllVerifications().length, 1);
+      assert.strictEqual(store.getAllVerifications()[0].id, v2.id);
+    });
+  });
+
+  describe('getVerificationsForTarget', () => {
+    it('should return verifications for specific target', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const v1 = createVerification(kp.publicKey, kp.privateKey, 'target1', 'ocr', 'correct', 0.9);
+      const v2 = createVerification(kp.publicKey, kp.privateKey, 'target2', 'ocr', 'correct', 0.8);
+      const v3 = createVerification(kp.publicKey, kp.privateKey, 'target1', 'ocr', 'incorrect', 0.7);
+
+      store.addVerification(v1);
+      store.addVerification(v2);
+      store.addVerification(v3);
+
+      const verifications = store.getVerificationsForTarget('target1');
+      assert.strictEqual(verifications.length, 2);
+      assert.ok(verifications.some(v => v.id === v1.id));
+      assert.ok(verifications.some(v => v.id === v3.id));
+    });
+  });
+
+  describe('getVerificationsByVerifier', () => {
+    it('should return verifications by specific verifier', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp1 = generateKeyPair();
+      const kp2 = generateKeyPair();
+      const v1 = createVerification(kp1.publicKey, kp1.privateKey, 't1', 'ocr', 'correct', 0.9);
+      const v2 = createVerification(kp2.publicKey, kp2.privateKey, 't2', 'ocr', 'correct', 0.8);
+      const v3 = createVerification(kp1.publicKey, kp1.privateKey, 't3', 'ocr', 'incorrect', 0.7);
+
+      store.addVerification(v1);
+      store.addVerification(v2);
+      store.addVerification(v3);
+
+      const verifications = store.getVerificationsByVerifier(kp1.publicKey);
+      assert.strictEqual(verifications.length, 2);
+      assert.ok(verifications.some(v => v.id === v1.id));
+      assert.ok(verifications.some(v => v.id === v3.id));
+    });
+  });
+
+  describe('getVerificationsByDomain', () => {
+    it('should return verifications in specific domain', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const v1 = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+      const v2 = createVerification(kp.publicKey, kp.privateKey, 't2', 'summarization', 'correct', 0.8);
+      const v3 = createVerification(kp.publicKey, kp.privateKey, 't3', 'ocr', 'incorrect', 0.7);
+
+      store.addVerification(v1);
+      store.addVerification(v2);
+      store.addVerification(v3);
+
+      const verifications = store.getVerificationsByDomain('ocr');
+      assert.strictEqual(verifications.length, 2);
+      assert.ok(verifications.some(v => v.id === v1.id));
+      assert.ok(verifications.some(v => v.id === v3.id));
+    });
+  });
+
   describe('getCommit', () => {
-    it('should retrieve commit by ID', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const agent = generateKeyPair();
-      const commit = createCommit(
-        agent.publicKey,
-        agent.privateKey,
-        'weather',
-        'prediction',
-        1000
-      );
-      
-      await store.append({ type: 'commit', ...commit });
-      
-      const retrieved = await store.getCommit(commit.id);
+    it('should retrieve commit by ID', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
+
+      store.addCommit(commit);
+
+      const retrieved = store.getCommit(commit.id);
       assert.ok(retrieved);
       assert.strictEqual(retrieved.id, commit.id);
-      assert.strictEqual(retrieved.agent, commit.agent);
-      
-      await rm(tmpDir, { recursive: true });
     });
-    
-    it('should return undefined for non-existent commit', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      const store = new ReputationStore(storePath);
-      
-      const retrieved = await store.getCommit('non-existent-id');
+
+    it('should return undefined for non-existent commit', () => {
+      const store = new ReputationStore(testStorePath);
+      const retrieved = store.getCommit('non-existent-id');
       assert.strictEqual(retrieved, undefined);
-      
-      await rm(tmpDir, { recursive: true });
     });
   });
-  
+
+  describe('getCommitsByAgent', () => {
+    it('should return all commits by an agent', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp1 = generateKeyPair();
+      const kp2 = generateKeyPair();
+      const c1 = createCommit(kp1.publicKey, kp1.privateKey, 'weather', 'prediction1');
+      const c2 = createCommit(kp2.publicKey, kp2.privateKey, 'weather', 'prediction2');
+      const c3 = createCommit(kp1.publicKey, kp1.privateKey, 'market', 'prediction3');
+
+      store.addCommit(c1);
+      store.addCommit(c2);
+      store.addCommit(c3);
+
+      const commits = store.getCommitsByAgent(kp1.publicKey);
+      assert.strictEqual(commits.length, 2);
+      assert.ok(commits.some(c => c.id === c1.id));
+      assert.ok(commits.some(c => c.id === c3.id));
+    });
+  });
+
+  describe('getRevealByCommitment', () => {
+    it('should retrieve reveal by commitment ID', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
+      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'prediction', 'outcome');
+
+      store.addReveal(reveal);
+
+      const retrieved = store.getRevealByCommitment(commit.id);
+      assert.ok(retrieved);
+      assert.strictEqual(retrieved.commitmentId, commit.id);
+    });
+  });
+
+  describe('getRevealsByAgent', () => {
+    it('should return all reveals by an agent', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp1 = generateKeyPair();
+      const kp2 = generateKeyPair();
+      const r1 = createReveal(kp1.publicKey, kp1.privateKey, 'c1', 'p1', 'o1');
+      const r2 = createReveal(kp2.publicKey, kp2.privateKey, 'c2', 'p2', 'o2');
+      const r3 = createReveal(kp1.publicKey, kp1.privateKey, 'c3', 'p3', 'o3');
+
+      store.addReveal(r1);
+      store.addReveal(r2);
+      store.addReveal(r3);
+
+      const reveals = store.getRevealsByAgent(kp1.publicKey);
+      assert.strictEqual(reveals.length, 2);
+      assert.ok(reveals.some(r => r.id === r1.id));
+      assert.ok(reveals.some(r => r.id === r3.id));
+    });
+  });
+
+  describe('computeTrustScore', () => {
+    it('should compute trust score for agent in domain', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+      const agent = 'test-agent-key';
+      const v1 = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+
+      store.addVerification(v1);
+
+      const score = store.computeTrustScore(agent, 'ocr');
+      assert.ok(score);
+      assert.strictEqual(score.agent, agent);
+      assert.strictEqual(score.domain, 'ocr');
+      assert.ok(score.score >= 0 && score.score <= 1);
+    });
+  });
+
   describe('persistence', () => {
-    it('should persist across store instances', async () => {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'agora-test-'));
-      const storePath = join(tmpDir, 'reputation.jsonl');
-      
-      // First instance
-      const store1 = new ReputationStore(storePath);
-      const verifier = generateKeyPair();
-      const v1 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        'target',
-        'domain',
-        'correct',
-        1.0
-      );
-      await store1.append({ type: 'verification', ...v1 });
-      
-      // Second instance
-      const store2 = new ReputationStore(storePath);
-      const records = await store2.readAll();
-      
-      assert.strictEqual(records.length, 1);
-      assert.strictEqual(records[0].type, 'verification');
-      
-      await rm(tmpDir, { recursive: true });
+    it('should persist multiple entries to JSONL', () => {
+      const store = new ReputationStore(testStorePath);
+      const kp = generateKeyPair();
+
+      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
+      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'prediction', 'outcome');
+      const revocation = createRevocation(kp.publicKey, kp.privateKey, verification.id, 'discovered_error');
+
+      store.addVerification(verification);
+      store.addCommit(commit);
+      store.addReveal(reveal);
+      store.addRevocation(revocation);
+
+      // Load in new store instance
+      const store2 = new ReputationStore(testStorePath);
+      assert.strictEqual(store2.getAllVerifications().length, 0); // Revoked
+      assert.strictEqual(store2.getAllCommits().length, 1);
+      assert.strictEqual(store2.getAllReveals().length, 1);
+      assert.strictEqual(store2.getAllRevocations().length, 1);
+      assert.strictEqual(store2.isRevoked(verification.id), true);
     });
   });
 });
