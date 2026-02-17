@@ -1,349 +1,512 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { existsSync, unlinkSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { generateKeyPair } from '../../src/identity/keypair.js';
+import { createVerification } from '../../src/reputation/verification.js';
+import { createCommit, createReveal } from '../../src/reputation/commit-reveal.js';
 import { ReputationStore } from '../../src/reputation/store.js';
-import {
-  createVerification,
-  createRevocation,
-} from '../../src/reputation/verification.js';
-import {
-  createCommit,
-  createReveal,
-} from '../../src/reputation/commit-reveal.js';
 
 describe('ReputationStore', () => {
-  const testStorePath = '/tmp/agora-test-reputation.jsonl';
-
-  beforeEach(() => {
-    // Clean up test file before each test
-    if (existsSync(testStorePath)) {
-      unlinkSync(testStorePath);
-    }
-    const dir = dirname(testStorePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-  });
-
-  describe('constructor', () => {
-    it('should create a new store with empty state', () => {
-      const store = new ReputationStore(testStorePath);
-
-      assert.strictEqual(store.getAllVerifications().length, 0);
-      assert.strictEqual(store.getAllCommits().length, 0);
-      assert.strictEqual(store.getAllReveals().length, 0);
-      assert.strictEqual(store.getAllRevocations().length, 0);
-    });
-
-    it('should create directory if it does not exist', () => {
-      const nestedPath = '/tmp/agora-test/nested/reputation.jsonl';
-      const nestedDir = dirname(nestedPath);
+  // Helper to create temporary directory for each test
+  function createTempStore(): { store: ReputationStore; cleanup: () => void } {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agora-test-'));
+    const filePath = join(tempDir, 'reputation.jsonl');
+    const store = new ReputationStore({ filePath });
+    
+    return {
+      store,
+      cleanup: () => rmSync(tempDir, { recursive: true, force: true })
+    };
+  }
+  
+  describe('append and readAll', () => {
+    it('should append and read verification records', () => {
+      const { store, cleanup } = createTempStore();
       
-      // Clean up if exists from previous runs
-      if (existsSync(nestedPath)) {
-        unlinkSync(nestedPath);
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const verification = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.95
+        );
+        
+        store.append({ type: 'verification', data: verification });
+        
+        const records = store.readAll();
+        assert.strictEqual(records.length, 1);
+        assert.strictEqual(records[0].type, 'verification');
+        assert.strictEqual((records[0].data as typeof verification).id, verification.id);
+      } finally {
+        cleanup();
       }
-
-      new ReputationStore(nestedPath);
-      assert.ok(existsSync(nestedDir));
-
-      // Clean up
-      if (existsSync(nestedPath)) {
-        unlinkSync(nestedPath);
-      }
     });
-
-    it('should load existing data from file', () => {
-      const kp = generateKeyPair();
-      const store1 = new ReputationStore(testStorePath);
-
-      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-      store1.addVerification(verification);
-
-      // Create new store instance - should load from file
-      const store2 = new ReputationStore(testStorePath);
-      assert.strictEqual(store2.getAllVerifications().length, 1);
-      assert.strictEqual(store2.getAllVerifications()[0].id, verification.id);
-    });
-  });
-
-  describe('addVerification', () => {
-    it('should add verification to store', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-
-      store.addVerification(verification);
-
-      const verifications = store.getAllVerifications();
-      assert.strictEqual(verifications.length, 1);
-      assert.strictEqual(verifications[0].id, verification.id);
-    });
-
-    it('should persist verification to file', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-
-      store.addVerification(verification);
-
-      // Verify file exists and contains data
-      assert.ok(existsSync(testStorePath));
-      const store2 = new ReputationStore(testStorePath);
-      assert.strictEqual(store2.getAllVerifications().length, 1);
-    });
-  });
-
-  describe('addCommit', () => {
-    it('should add commit to store', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
-
-      store.addCommit(commit);
-
-      const commits = store.getAllCommits();
-      assert.strictEqual(commits.length, 1);
-      assert.strictEqual(commits[0].id, commit.id);
-    });
-  });
-
-  describe('addReveal', () => {
-    it('should add reveal to store', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
-      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'prediction', 'outcome');
-
-      store.addReveal(reveal);
-
-      const reveals = store.getAllReveals();
-      assert.strictEqual(reveals.length, 1);
-      assert.strictEqual(reveals[0].id, reveal.id);
-    });
-  });
-
-  describe('addRevocation', () => {
-    it('should add revocation to store', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-      const revocation = createRevocation(kp.publicKey, kp.privateKey, verification.id, 'discovered_error');
-
-      store.addRevocation(revocation);
-
-      const revocations = store.getAllRevocations();
-      assert.strictEqual(revocations.length, 1);
-      assert.strictEqual(revocations[0].id, revocation.id);
-    });
-
-    it('should mark verification as revoked', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
+    
+    it('should append multiple records', () => {
+      const { store, cleanup } = createTempStore();
       
-      store.addVerification(verification);
-      assert.strictEqual(store.isRevoked(verification.id), false);
-
-      const revocation = createRevocation(kp.publicKey, kp.privateKey, verification.id, 'discovered_error');
-      store.addRevocation(revocation);
-
-      assert.strictEqual(store.isRevoked(verification.id), true);
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const v1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        const v2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'code_review',
+          'correct',
+          0.8
+        );
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'verification', data: v2 });
+        
+        const records = store.readAll();
+        assert.strictEqual(records.length, 2);
+      } finally {
+        cleanup();
+      }
     });
-
-    it('should exclude revoked verifications from queries', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const v1 = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-      const v2 = createVerification(kp.publicKey, kp.privateKey, 't2', 'ocr', 'correct', 0.9);
-
-      store.addVerification(v1);
-      store.addVerification(v2);
-      assert.strictEqual(store.getAllVerifications().length, 2);
-
-      const revocation = createRevocation(kp.publicKey, kp.privateKey, v1.id, 'discovered_error');
-      store.addRevocation(revocation);
-
-      // Should only return non-revoked verification
-      assert.strictEqual(store.getAllVerifications().length, 1);
-      assert.strictEqual(store.getAllVerifications()[0].id, v2.id);
+    
+    it('should handle empty store', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const records = store.readAll();
+        assert.strictEqual(records.length, 0);
+      } finally {
+        cleanup();
+      }
     });
-  });
-
-  describe('getVerificationsForTarget', () => {
-    it('should return verifications for specific target', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const v1 = createVerification(kp.publicKey, kp.privateKey, 'target1', 'ocr', 'correct', 0.9);
-      const v2 = createVerification(kp.publicKey, kp.privateKey, 'target2', 'ocr', 'correct', 0.8);
-      const v3 = createVerification(kp.publicKey, kp.privateKey, 'target1', 'ocr', 'incorrect', 0.7);
-
-      store.addVerification(v1);
-      store.addVerification(v2);
-      store.addVerification(v3);
-
-      const verifications = store.getVerificationsForTarget('target1');
-      assert.strictEqual(verifications.length, 2);
-      assert.ok(verifications.some(v => v.id === v1.id));
-      assert.ok(verifications.some(v => v.id === v3.id));
-    });
-  });
-
-  describe('getVerificationsByVerifier', () => {
-    it('should return verifications by specific verifier', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp1 = generateKeyPair();
-      const kp2 = generateKeyPair();
-      const v1 = createVerification(kp1.publicKey, kp1.privateKey, 't1', 'ocr', 'correct', 0.9);
-      const v2 = createVerification(kp2.publicKey, kp2.privateKey, 't2', 'ocr', 'correct', 0.8);
-      const v3 = createVerification(kp1.publicKey, kp1.privateKey, 't3', 'ocr', 'incorrect', 0.7);
-
-      store.addVerification(v1);
-      store.addVerification(v2);
-      store.addVerification(v3);
-
-      const verifications = store.getVerificationsByVerifier(kp1.publicKey);
-      assert.strictEqual(verifications.length, 2);
-      assert.ok(verifications.some(v => v.id === v1.id));
-      assert.ok(verifications.some(v => v.id === v3.id));
-    });
-  });
-
-  describe('getVerificationsByDomain', () => {
-    it('should return verifications in specific domain', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const v1 = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-      const v2 = createVerification(kp.publicKey, kp.privateKey, 't2', 'summarization', 'correct', 0.8);
-      const v3 = createVerification(kp.publicKey, kp.privateKey, 't3', 'ocr', 'incorrect', 0.7);
-
-      store.addVerification(v1);
-      store.addVerification(v2);
-      store.addVerification(v3);
-
-      const verifications = store.getVerificationsByDomain('ocr');
-      assert.strictEqual(verifications.length, 2);
-      assert.ok(verifications.some(v => v.id === v1.id));
-      assert.ok(verifications.some(v => v.id === v3.id));
+    
+    it('should persist across store instances', () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'agora-test-'));
+      const filePath = join(tempDir, 'reputation.jsonl');
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        // Write with first instance
+        {
+          const store1 = new ReputationStore({ filePath });
+          const verification = createVerification(
+            verifier.publicKey,
+            verifier.privateKey,
+            agent.publicKey,
+            'ocr',
+            'correct',
+            0.9
+          );
+          store1.append({ type: 'verification', data: verification });
+        }
+        
+        // Read with second instance
+        {
+          const store2 = new ReputationStore({ filePath });
+          const records = store2.readAll();
+          assert.strictEqual(records.length, 1);
+        }
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
-
-  describe('getCommit', () => {
-    it('should retrieve commit by ID', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
-
-      store.addCommit(commit);
-
-      const retrieved = store.getCommit(commit.id);
-      assert.ok(retrieved);
-      assert.strictEqual(retrieved.id, commit.id);
-    });
-
-    it('should return undefined for non-existent commit', () => {
-      const store = new ReputationStore(testStorePath);
-      const retrieved = store.getCommit('non-existent-id');
-      assert.strictEqual(retrieved, undefined);
-    });
-  });
-
-  describe('getCommitsByAgent', () => {
-    it('should return all commits by an agent', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp1 = generateKeyPair();
-      const kp2 = generateKeyPair();
-      const c1 = createCommit(kp1.publicKey, kp1.privateKey, 'weather', 'prediction1');
-      const c2 = createCommit(kp2.publicKey, kp2.privateKey, 'weather', 'prediction2');
-      const c3 = createCommit(kp1.publicKey, kp1.privateKey, 'market', 'prediction3');
-
-      store.addCommit(c1);
-      store.addCommit(c2);
-      store.addCommit(c3);
-
-      const commits = store.getCommitsByAgent(kp1.publicKey);
-      assert.strictEqual(commits.length, 2);
-      assert.ok(commits.some(c => c.id === c1.id));
-      assert.ok(commits.some(c => c.id === c3.id));
-    });
-  });
-
-  describe('getRevealByCommitment', () => {
-    it('should retrieve reveal by commitment ID', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
-      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'prediction', 'outcome');
-
-      store.addReveal(reveal);
-
-      const retrieved = store.getRevealByCommitment(commit.id);
-      assert.ok(retrieved);
-      assert.strictEqual(retrieved.commitmentId, commit.id);
+  
+  describe('getVerifications', () => {
+    it('should get all verification records', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const v1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        const commit = createCommit(
+          agent.publicKey,
+          agent.privateKey,
+          'weather',
+          'prediction'
+        );
+        
+        const v2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'code_review',
+          'correct',
+          0.8
+        );
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'commit', data: commit });
+        store.append({ type: 'verification', data: v2 });
+        
+        const verifications = store.getVerifications();
+        assert.strictEqual(verifications.length, 2);
+        assert.strictEqual(verifications[0].id, v1.id);
+        assert.strictEqual(verifications[1].id, v2.id);
+      } finally {
+        cleanup();
+      }
     });
   });
-
-  describe('getRevealsByAgent', () => {
-    it('should return all reveals by an agent', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp1 = generateKeyPair();
-      const kp2 = generateKeyPair();
-      const r1 = createReveal(kp1.publicKey, kp1.privateKey, 'c1', 'p1', 'o1');
-      const r2 = createReveal(kp2.publicKey, kp2.privateKey, 'c2', 'p2', 'o2');
-      const r3 = createReveal(kp1.publicKey, kp1.privateKey, 'c3', 'p3', 'o3');
-
-      store.addReveal(r1);
-      store.addReveal(r2);
-      store.addReveal(r3);
-
-      const reveals = store.getRevealsByAgent(kp1.publicKey);
-      assert.strictEqual(reveals.length, 2);
-      assert.ok(reveals.some(r => r.id === r1.id));
-      assert.ok(reveals.some(r => r.id === r3.id));
+  
+  describe('getVerificationsForAgent', () => {
+    it('should filter verifications by agent', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent1 = generateKeyPair();
+        const agent2 = generateKeyPair();
+        
+        const v1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent1.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        const v2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent2.publicKey,
+          'ocr',
+          'correct',
+          0.8
+        );
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'verification', data: v2 });
+        
+        const agent1Verifications = store.getVerificationsForAgent(agent1.publicKey);
+        assert.strictEqual(agent1Verifications.length, 1);
+        assert.strictEqual(agent1Verifications[0].target, agent1.publicKey);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should filter verifications by agent and domain', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const v1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        const v2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'code_review',
+          'correct',
+          0.8
+        );
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'verification', data: v2 });
+        
+        const ocrVerifications = store.getVerificationsForAgent(agent.publicKey, 'ocr');
+        assert.strictEqual(ocrVerifications.length, 1);
+        assert.strictEqual(ocrVerifications[0].domain, 'ocr');
+      } finally {
+        cleanup();
+      }
     });
   });
-
-  describe('computeTrustScore', () => {
-    it('should compute trust score for agent in domain', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-      const agent = 'test-agent-key';
-      const v1 = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-
-      store.addVerification(v1);
-
-      const score = store.computeTrustScore(agent, 'ocr');
-      assert.ok(score);
-      assert.strictEqual(score.agent, agent);
-      assert.strictEqual(score.domain, 'ocr');
-      assert.ok(score.score >= 0 && score.score <= 1);
+  
+  describe('commit and reveal operations', () => {
+    it('should store and retrieve commits', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const agent = generateKeyPair();
+        const commit = createCommit(
+          agent.publicKey,
+          agent.privateKey,
+          'weather',
+          'prediction'
+        );
+        
+        store.append({ type: 'commit', data: commit });
+        
+        const commits = store.getCommits();
+        assert.strictEqual(commits.length, 1);
+        assert.strictEqual(commits[0].id, commit.id);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should get commit by ID', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const agent = generateKeyPair();
+        const commit = createCommit(
+          agent.publicKey,
+          agent.privateKey,
+          'weather',
+          'prediction'
+        );
+        
+        store.append({ type: 'commit', data: commit });
+        
+        const retrieved = store.getCommitById(commit.id);
+        assert.ok(retrieved);
+        assert.strictEqual(retrieved.id, commit.id);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should store and retrieve reveals', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const agent = generateKeyPair();
+        const reveal = createReveal(
+          agent.publicKey,
+          agent.privateKey,
+          'commit_id_123',
+          'prediction',
+          'outcome'
+        );
+        
+        store.append({ type: 'reveal', data: reveal });
+        
+        const reveals = store.getReveals();
+        assert.strictEqual(reveals.length, 1);
+        assert.strictEqual(reveals[0].id, reveal.id);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should get reveal by commitment ID', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const agent = generateKeyPair();
+        const commitId = 'commit_id_123';
+        const reveal = createReveal(
+          agent.publicKey,
+          agent.privateKey,
+          commitId,
+          'prediction',
+          'outcome'
+        );
+        
+        store.append({ type: 'reveal', data: reveal });
+        
+        const retrieved = store.getRevealByCommitmentId(commitId);
+        assert.ok(retrieved);
+        assert.strictEqual(retrieved.commitmentId, commitId);
+      } finally {
+        cleanup();
+      }
     });
   });
-
-  describe('persistence', () => {
-    it('should persist multiple entries to JSONL', () => {
-      const store = new ReputationStore(testStorePath);
-      const kp = generateKeyPair();
-
-      const verification = createVerification(kp.publicKey, kp.privateKey, 't1', 'ocr', 'correct', 0.9);
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'weather', 'prediction');
-      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'prediction', 'outcome');
-      const revocation = createRevocation(kp.publicKey, kp.privateKey, verification.id, 'discovered_error');
-
-      store.addVerification(verification);
-      store.addCommit(commit);
-      store.addReveal(reveal);
-      store.addRevocation(revocation);
-
-      // Load in new store instance
-      const store2 = new ReputationStore(testStorePath);
-      assert.strictEqual(store2.getAllVerifications().length, 0); // Revoked
-      assert.strictEqual(store2.getAllCommits().length, 1);
-      assert.strictEqual(store2.getAllReveals().length, 1);
-      assert.strictEqual(store2.getAllRevocations().length, 1);
-      assert.strictEqual(store2.isRevoked(verification.id), true);
+  
+  describe('revocations', () => {
+    it('should store and retrieve revocations', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        
+        const revocation = {
+          id: 'revocation_id_123',
+          verifier: verifier.publicKey,
+          verificationId: 'verification_id_456',
+          reason: 'Found error in verification',
+          timestamp: Date.now(),
+          signature: 'fake_signature',
+        };
+        
+        store.append({ type: 'revocation', data: revocation });
+        
+        const revocations = store.getRevocations();
+        assert.strictEqual(revocations.length, 1);
+        assert.strictEqual(revocations[0].id, revocation.id);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should check if verification is revoked', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const verification = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        store.append({ type: 'verification', data: verification });
+        
+        // Not revoked initially
+        assert.strictEqual(store.isRevoked(verification.id), false);
+        
+        // Add revocation
+        const revocation = {
+          id: 'revocation_id_123',
+          verifier: verifier.publicKey,
+          verificationId: verification.id,
+          reason: 'Error found',
+          timestamp: Date.now(),
+          signature: 'fake_signature',
+        };
+        
+        store.append({ type: 'revocation', data: revocation });
+        
+        // Now revoked
+        assert.strictEqual(store.isRevoked(verification.id), true);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should get active (non-revoked) verifications', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const v1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        const v2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'code_review',
+          'correct',
+          0.8
+        );
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'verification', data: v2 });
+        
+        // Revoke v1
+        const revocation = {
+          id: 'revocation_id_123',
+          verifier: verifier.publicKey,
+          verificationId: v1.id,
+          reason: 'Error found',
+          timestamp: Date.now(),
+          signature: 'fake_signature',
+        };
+        
+        store.append({ type: 'revocation', data: revocation });
+        
+        const activeVerifications = store.getActiveVerifications();
+        assert.strictEqual(activeVerifications.length, 1);
+        assert.strictEqual(activeVerifications[0].id, v2.id);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should get active verifications for agent', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const v1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        
+        const v2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'code_review',
+          'correct',
+          0.8
+        );
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'verification', data: v2 });
+        
+        // Revoke v1
+        const revocation = {
+          id: 'revocation_id_123',
+          verifier: verifier.publicKey,
+          verificationId: v1.id,
+          reason: 'Error found',
+          timestamp: Date.now(),
+          signature: 'fake_signature',
+        };
+        
+        store.append({ type: 'revocation', data: revocation });
+        
+        const activeVerifications = store.getActiveVerificationsForAgent(agent.publicKey);
+        assert.strictEqual(activeVerifications.length, 1);
+        assert.strictEqual(activeVerifications[0].domain, 'code_review');
+        
+        const activeOcrVerifications = store.getActiveVerificationsForAgent(agent.publicKey, 'ocr');
+        assert.strictEqual(activeOcrVerifications.length, 0);
+      } finally {
+        cleanup();
+      }
     });
   });
 });

@@ -1,280 +1,358 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { existsSync, unlinkSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { generateKeyPair } from '../../src/identity/keypair.js';
+import { createVerification, validateVerification } from '../../src/reputation/verification.js';
+import { createCommit, createReveal, verifyReveal } from '../../src/reputation/commit-reveal.js';
+import { computeTrustScore, computeAllTrustScores } from '../../src/reputation/scoring.js';
 import { ReputationStore } from '../../src/reputation/store.js';
-import {
-  createVerification,
-  createRevocation,
-} from '../../src/reputation/verification.js';
-import {
-  createCommit,
-  createReveal,
-  verifyReveal,
-} from '../../src/reputation/commit-reveal.js';
-import { computeTrustScore } from '../../src/reputation/scoring.js';
 
 describe('Reputation Integration', () => {
-  const testStorePath = '/tmp/agora-test-reputation-integration.jsonl';
-
-  beforeEach(() => {
-    if (existsSync(testStorePath)) {
-      unlinkSync(testStorePath);
-    }
-    const dir = dirname(testStorePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
+  function createTempStore(): { store: ReputationStore; cleanup: () => void } {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agora-test-'));
+    const filePath = join(tempDir, 'reputation.jsonl');
+    const store = new ReputationStore({ filePath });
+    
+    return {
+      store,
+      cleanup: () => rmSync(tempDir, { recursive: true, force: true })
+    };
+  }
+  
+  describe('end-to-end verification flow', () => {
+    it('should complete full verification workflow', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        // Setup: Alice verifies Bob's OCR work
+        const alice = generateKeyPair();
+        const bob = generateKeyPair();
+        
+        // Alice creates a verification for Bob
+        const verification = createVerification(
+          alice.publicKey,
+          alice.privateKey,
+          bob.publicKey,
+          'ocr',
+          'correct',
+          0.95,
+          'https://example.com/evidence'
+        );
+        
+        // Validate verification
+        const validationResult = validateVerification(verification);
+        assert.strictEqual(validationResult.valid, true);
+        
+        // Store verification
+        store.append({ type: 'verification', data: verification });
+        
+        // Retrieve and compute Bob's trust score
+        const bobVerifications = store.getVerificationsForAgent(bob.publicKey, 'ocr');
+        assert.strictEqual(bobVerifications.length, 1);
+        
+        const trustScore = computeTrustScore(
+          bob.publicKey,
+          'ocr',
+          bobVerifications
+        );
+        
+        assert.strictEqual(trustScore.agent, bob.publicKey);
+        assert.strictEqual(trustScore.domain, 'ocr');
+        // Score with slight time passage: ~0.97-0.98
+        assert.ok(trustScore.score > 0.97 && trustScore.score <= 1.0, 
+          `Expected ~0.97-1.0, got ${trustScore.score}`);
+        assert.strictEqual(trustScore.verificationCount, 1);
+        assert.deepStrictEqual(trustScore.topVerifiers, [alice.publicKey]);
+      } finally {
+        cleanup();
+      }
+    });
+    
+    it('should handle multiple verifications from different agents', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const bob = generateKeyPair();
+        const alice = generateKeyPair();
+        const charlie = generateKeyPair();
+        const david = generateKeyPair();
+        
+        const now = Date.now();
+        
+        // Multiple agents verify Bob's work
+        const v1 = createVerification(
+          alice.publicKey,
+          alice.privateKey,
+          bob.publicKey,
+          'code_review',
+          'correct',
+          0.9
+        );
+        v1.timestamp = now;
+        
+        const v2 = createVerification(
+          charlie.publicKey,
+          charlie.privateKey,
+          bob.publicKey,
+          'code_review',
+          'correct',
+          0.95
+        );
+        v2.timestamp = now;
+        
+        const v3 = createVerification(
+          david.publicKey,
+          david.privateKey,
+          bob.publicKey,
+          'code_review',
+          'incorrect',
+          0.8
+        );
+        v3.timestamp = now;
+        
+        store.append({ type: 'verification', data: v1 });
+        store.append({ type: 'verification', data: v2 });
+        store.append({ type: 'verification', data: v3 });
+        
+        const bobVerifications = store.getActiveVerificationsForAgent(bob.publicKey, 'code_review');
+        const trustScore = computeTrustScore(
+          bob.publicKey,
+          'code_review',
+          bobVerifications,
+          now
+        );
+        
+        // Score: ((0.9 + 0.95 - 0.8) / 3 + 1) / 2 = (1.05/3 + 1)/2 = ~0.675
+        assert.ok(trustScore.score > 0.65 && trustScore.score < 0.7, 
+          `Expected ~0.675, got ${trustScore.score}`);
+        assert.strictEqual(trustScore.verificationCount, 3);
+        assert.strictEqual(trustScore.topVerifiers.length, 3);
+      } finally {
+        cleanup();
+      }
+    });
   });
-
-  it('should support complete commit-reveal-verify flow', () => {
-    const store = new ReputationStore(testStorePath);
-    const agent = generateKeyPair();
-    const verifier1 = generateKeyPair();
-    const verifier2 = generateKeyPair();
-
-    // Step 1: Agent commits to a prediction
-    const prediction = 'It will rain in Stockholm on 2026-02-17';
-    const commit = createCommit(agent.publicKey, agent.privateKey, 'weather_forecast', prediction, 100);
-    store.addCommit(commit);
-
-    // Verify commit was stored
-    const storedCommit = store.getCommit(commit.id);
-    assert.ok(storedCommit);
-    assert.strictEqual(storedCommit.commitment, commit.commitment);
-
-    // Step 2: After event occurs, agent reveals the prediction
-    const reveal = createReveal(
-      agent.publicKey,
-      agent.privateKey,
-      commit.id,
-      prediction,
-      'rain observed',
-      'https://weather.api/stockholm/2026-02-17',
-    );
-    store.addReveal(reveal);
-
-    // Step 3: Verify the reveal matches the commitment
-    const verifyResult = verifyReveal(commit, reveal);
-    assert.strictEqual(verifyResult.valid, true);
-
-    // Step 4: Verifiers independently check and verify the claim
-    const verification1 = createVerification(
-      verifier1.publicKey,
-      verifier1.privateKey,
-      reveal.id,
-      'weather_forecast',
-      'correct',
-      0.95,
-      'https://verifier1.com/check',
-    );
-    store.addVerification(verification1);
-
-    const verification2 = createVerification(
-      verifier2.publicKey,
-      verifier2.privateKey,
-      reveal.id,
-      'weather_forecast',
-      'correct',
-      0.90,
-    );
-    store.addVerification(verification2);
-
-    // Step 5: Compute trust score for the agent
-    const score = store.computeTrustScore(agent.publicKey, 'weather_forecast');
-    assert.ok(score.score > 0.5); // Positive verifications should increase score
-    assert.strictEqual(score.verificationCount, 2);
-    assert.strictEqual(score.domain, 'weather_forecast');
+  
+  describe('end-to-end commit-reveal flow', () => {
+    it('should complete full commit-reveal workflow', async () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const agent = generateKeyPair();
+        const prediction = 'Bitcoin will reach $100k by end of Q1 2026';
+        
+        // Agent commits to prediction
+        const commit = createCommit(
+          agent.publicKey,
+          agent.privateKey,
+          'price_prediction',
+          prediction,
+          1000 // 1 second expiry for test
+        );
+        
+        store.append({ type: 'commit', data: commit });
+        
+        // Wait for expiry
+        await new Promise(resolve => setTimeout(resolve, 1100));
+        
+        // Agent reveals prediction and outcome
+        const reveal = createReveal(
+          agent.publicKey,
+          agent.privateKey,
+          commit.id,
+          prediction,
+          'Bitcoin reached $95k',
+          'https://coinmarketcap.com/...'
+        );
+        
+        store.append({ type: 'reveal', data: reveal });
+        
+        // Verify the reveal matches the commit
+        const verificationResult = verifyReveal(commit, reveal);
+        assert.strictEqual(verificationResult.valid, true);
+        
+        // Retrieve from store
+        const storedCommit = store.getCommitById(commit.id);
+        assert.ok(storedCommit);
+        assert.strictEqual(storedCommit.id, commit.id);
+        
+        const storedReveal = store.getRevealByCommitmentId(commit.id);
+        assert.ok(storedReveal);
+        assert.strictEqual(storedReveal.prediction, prediction);
+      } finally {
+        cleanup();
+      }
+    });
   });
-
-  it('should handle verification revocation', () => {
-    const store = new ReputationStore(testStorePath);
-    const agent = 'agent-key';
-    const verifier = generateKeyPair();
-
-    // Verifier creates a verification
-    const verification = createVerification(
-      verifier.publicKey,
-      verifier.privateKey,
-      'target1',
-      'ocr',
-      'correct',
-      0.95,
-    );
-    store.addVerification(verification);
-
-    // Compute initial score
-    let score = store.computeTrustScore(agent, 'ocr');
-    assert.strictEqual(score.verificationCount, 1);
-
-    // Verifier discovers an error and revokes the verification
-    const revocation = createRevocation(
-      verifier.publicKey,
-      verifier.privateKey,
-      verification.id,
-      'discovered_error',
-      'https://evidence.com/error-report',
-    );
-    store.addRevocation(revocation);
-
-    // Verify the verification is marked as revoked
-    assert.strictEqual(store.isRevoked(verification.id), true);
-
-    // Compute score again - should not include revoked verification
-    score = store.computeTrustScore(agent, 'ocr');
-    assert.strictEqual(score.verificationCount, 0);
-    assert.strictEqual(score.score, 0.5); // Neutral score with no verifications
+  
+  describe('multi-domain reputation', () => {
+    it('should maintain separate scores per domain', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const agent = generateKeyPair();
+        const verifier = generateKeyPair();
+        
+        const now = Date.now();
+        
+        // Agent is good at OCR
+        const ocrVer1 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          1.0
+        );
+        ocrVer1.timestamp = now;
+        
+        const ocrVer2 = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          1.0
+        );
+        ocrVer2.timestamp = now;
+        
+        // Agent is bad at code review
+        const codeVer = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'code_review',
+          'incorrect',
+          1.0
+        );
+        codeVer.timestamp = now;
+        
+        store.append({ type: 'verification', data: ocrVer1 });
+        store.append({ type: 'verification', data: ocrVer2 });
+        store.append({ type: 'verification', data: codeVer });
+        
+        // Compute all scores
+        const allVerifications = store.getActiveVerifications();
+        const scores = computeAllTrustScores(agent.publicKey, allVerifications, now);
+        
+        assert.strictEqual(scores.size, 2);
+        
+        const ocrScore = scores.get('ocr')!;
+        assert.strictEqual(ocrScore.score, 1.0); // Perfect
+        assert.strictEqual(ocrScore.verificationCount, 2);
+        
+        const codeScore = scores.get('code_review')!;
+        assert.strictEqual(codeScore.score, 0.0); // Failed
+        assert.strictEqual(codeScore.verificationCount, 1);
+      } finally {
+        cleanup();
+      }
+    });
   });
-
-  it('should compute domain-specific trust scores', () => {
-    const store = new ReputationStore(testStorePath);
-    const agent = 'agent-key';
-    const verifier = generateKeyPair();
-
-    // Add verifications in different domains
-    const v1 = createVerification(verifier.publicKey, verifier.privateKey, 't1', 'ocr', 'correct', 1.0);
-    const v2 = createVerification(verifier.publicKey, verifier.privateKey, 't2', 'ocr', 'correct', 0.9);
-    const v3 = createVerification(verifier.publicKey, verifier.privateKey, 't3', 'summarization', 'incorrect', 0.8);
-
-    store.addVerification(v1);
-    store.addVerification(v2);
-    store.addVerification(v3);
-
-    // Compute scores for each domain
-    const ocrScore = store.computeTrustScore(agent, 'ocr');
-    const summScore = store.computeTrustScore(agent, 'summarization');
-
-    // OCR should have high score (2 correct verifications)
-    assert.ok(ocrScore.score > 0.5);
-    assert.strictEqual(ocrScore.verificationCount, 2);
-    assert.strictEqual(ocrScore.domain, 'ocr');
-
-    // Summarization should have low score (1 incorrect verification)
-    assert.ok(summScore.score < 0.5);
-    assert.strictEqual(summScore.verificationCount, 1);
-    assert.strictEqual(summScore.domain, 'summarization');
+  
+  describe('revocation flow', () => {
+    it('should handle verification revocation', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        const now = Date.now();
+        
+        // Verifier issues verification
+        const verification = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          0.9
+        );
+        verification.timestamp = now;
+        
+        store.append({ type: 'verification', data: verification });
+        
+        // Compute initial score
+        let verifications = store.getActiveVerificationsForAgent(agent.publicKey, 'ocr');
+        let score = computeTrustScore(agent.publicKey, 'ocr', verifications, now);
+        
+        assert.ok(score.score > 0.9);
+        assert.strictEqual(score.verificationCount, 1);
+        
+        // Verifier discovers error and revokes
+        const revocation = {
+          id: 'revocation_' + Date.now(),
+          verifier: verifier.publicKey,
+          verificationId: verification.id,
+          reason: 'Found error in my verification process',
+          timestamp: Date.now(),
+          signature: 'fake_signature_for_test',
+        };
+        
+        store.append({ type: 'revocation', data: revocation });
+        
+        // Recompute score with active verifications only
+        verifications = store.getActiveVerificationsForAgent(agent.publicKey, 'ocr');
+        score = computeTrustScore(agent.publicKey, 'ocr', verifications, now);
+        
+        assert.strictEqual(score.score, 0); // No active verifications
+        assert.strictEqual(score.verificationCount, 0);
+      } finally {
+        cleanup();
+      }
+    });
   });
-
-  it('should apply time decay to verifications', () => {
-    const agent = 'agent-key';
-    const verifier = generateKeyPair();
-
-    const now = Date.now();
-    const recentTime = now - 1000; // 1 second ago
-    const oldTime = now - (100 * 24 * 60 * 60 * 1000); // 100 days ago
-
-    // Create two positive verifications at different times
-    const recentVerification = createVerification(
-      verifier.publicKey,
-      verifier.privateKey,
-      't1',
-      'ocr',
-      'correct',
-      1.0,
-    );
-    recentVerification.timestamp = recentTime;
-
-    const oldVerification = createVerification(
-      verifier.publicKey,
-      verifier.privateKey,
-      't2',
-      'ocr',
-      'correct',
-      1.0,
-    );
-    oldVerification.timestamp = oldTime;
-
-    // Compute score with both verifications
-    const score = computeTrustScore(agent, 'ocr', [recentVerification, oldVerification], now);
-
-    // Both are positive, so score should be high
-    assert.ok(score.score > 0.5);
-    assert.strictEqual(score.verificationCount, 2);
-    assert.strictEqual(score.lastVerified, recentTime); // Most recent tracked
-  });
-
-  it('should persist and reload complete reputation history', () => {
-    const agent = generateKeyPair();
-    const verifier = generateKeyPair();
-
-    // Create first store and add data
-    const store1 = new ReputationStore(testStorePath);
-
-    const commit = createCommit(agent.publicKey, agent.privateKey, 'test', 'prediction');
-    const reveal = createReveal(agent.publicKey, agent.privateKey, commit.id, 'prediction', 'outcome');
-    const verification = createVerification(verifier.publicKey, verifier.privateKey, reveal.id, 'test', 'correct', 0.9);
-
-    store1.addCommit(commit);
-    store1.addReveal(reveal);
-    store1.addVerification(verification);
-
-    // Create second store instance - should load from file
-    const store2 = new ReputationStore(testStorePath);
-
-    assert.strictEqual(store2.getAllCommits().length, 1);
-    assert.strictEqual(store2.getAllReveals().length, 1);
-    assert.strictEqual(store2.getAllVerifications().length, 1);
-
-    const loadedCommit = store2.getCommit(commit.id);
-    assert.ok(loadedCommit);
-    assert.strictEqual(loadedCommit.commitment, commit.commitment);
-
-    const loadedReveal = store2.getRevealByCommitment(commit.id);
-    assert.ok(loadedReveal);
-    assert.strictEqual(loadedReveal.prediction, 'prediction');
-  });
-
-  it('should handle multiple verifiers with different opinions', () => {
-    const store = new ReputationStore(testStorePath);
-    const agent = 'agent-key';
-    const verifier1 = generateKeyPair();
-    const verifier2 = generateKeyPair();
-    const verifier3 = generateKeyPair();
-
-    // Three verifiers with different opinions
-    const v1 = createVerification(verifier1.publicKey, verifier1.privateKey, 't1', 'ocr', 'correct', 1.0);
-    const v2 = createVerification(verifier2.publicKey, verifier2.privateKey, 't1', 'ocr', 'correct', 0.9);
-    const v3 = createVerification(verifier3.publicKey, verifier3.privateKey, 't1', 'ocr', 'incorrect', 0.8);
-
-    store.addVerification(v1);
-    store.addVerification(v2);
-    store.addVerification(v3);
-
-    const score = store.computeTrustScore(agent, 'ocr');
-
-    // With 2 correct and 1 incorrect, score should be positive but not perfect
-    assert.ok(score.score > 0.5);
-    assert.ok(score.score < 1.0);
-    assert.strictEqual(score.verificationCount, 3);
-    assert.strictEqual(score.topVerifiers.length, 3);
-  });
-
-  it('should handle commit expiry correctly', () => {
-    const agent = generateKeyPair();
-    const shortExpiryMs = 100; // 100ms
-
-    const commit = createCommit(
-      agent.publicKey,
-      agent.privateKey,
-      'test',
-      'prediction',
-      shortExpiryMs,
-    );
-
-    // Check expiry before time
-    assert.strictEqual(commit.expiry, commit.timestamp + shortExpiryMs);
-
-    // Reveal should still work regardless of expiry for verification purposes
-    const reveal = createReveal(
-      agent.publicKey,
-      agent.privateKey,
-      commit.id,
-      'prediction',
-      'outcome',
-    );
-
-    const verifyResult = verifyReveal(commit, reveal);
-    assert.strictEqual(verifyResult.valid, true);
+  
+  describe('time decay integration', () => {
+    it('should show reputation decay over time', () => {
+      const { store, cleanup } = createTempStore();
+      
+      try {
+        const verifier = generateKeyPair();
+        const agent = generateKeyPair();
+        
+        const verification = createVerification(
+          verifier.publicKey,
+          verifier.privateKey,
+          agent.publicKey,
+          'ocr',
+          'correct',
+          1.0
+        );
+        
+        store.append({ type: 'verification', data: verification });
+        
+        const verifications = store.getActiveVerificationsForAgent(agent.publicKey, 'ocr');
+        
+        // Score immediately
+        const scoreNow = computeTrustScore(
+          agent.publicKey,
+          'ocr',
+          verifications,
+          verification.timestamp
+        );
+        
+        assert.strictEqual(scoreNow.score, 1.0);
+        
+        // Score after 70 days (half-life)
+        const seventyDaysLater = verification.timestamp + (70 * 24 * 60 * 60 * 1000);
+        const scoreAfterDecay = computeTrustScore(
+          agent.publicKey,
+          'ocr',
+          verifications,
+          seventyDaysLater
+        );
+        
+        // Score should be lower due to decay
+        // With 50% decay, score goes from 1.0 to ~0.5, normalized: (0.5 + 1) / 2 = 0.75
+        assert.ok(scoreAfterDecay.score < scoreNow.score);
+        assert.ok(scoreAfterDecay.score > 0.73 && scoreAfterDecay.score < 0.77, 
+          `Expected ~0.75, got ${scoreAfterDecay.score}`);
+      } finally {
+        cleanup();
+      }
+    });
   });
 });

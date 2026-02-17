@@ -1,240 +1,213 @@
 /**
  * Local reputation store using JSONL (JSON Lines) format.
- * Append-only log for verification messages.
+ * Provides append-only, crash-safe storage for reputation records.
  */
 
-import { readFileSync, appendFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import type { VerificationRecord, CommitRecord, RevealRecord, RevocationRecord, TrustScore } from './types.js';
-import { computeTrustScore } from './scoring.js';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, dirname } from 'node:path';
+import type { VerificationRecord, CommitRecord, RevealRecord, RevocationRecord } from './types.js';
 
 /**
- * Entry types stored in the reputation log.
+ * Type for any reputation record that can be stored.
  */
-type LogEntry = 
-  | { type: 'verification'; record: VerificationRecord }
-  | { type: 'commit'; record: CommitRecord }
-  | { type: 'reveal'; record: RevealRecord }
-  | { type: 'revocation'; record: RevocationRecord };
+export type ReputationRecord =
+  | { type: 'verification'; data: VerificationRecord }
+  | { type: 'commit'; data: CommitRecord }
+  | { type: 'reveal'; data: RevealRecord }
+  | { type: 'revocation'; data: RevocationRecord };
 
 /**
- * Reputation store backed by JSONL append-only log.
- * Provides query methods for reputation data.
+ * Options for reputation store.
+ */
+export interface ReputationStoreOptions {
+  /** Path to the JSONL file (default: ~/.local/share/agora/reputation.jsonl) */
+  filePath?: string;
+}
+
+/**
+ * Local reputation store.
+ * Stores all reputation records in a JSONL file.
  */
 export class ReputationStore {
-  private readonly filePath: string;
-  private verifications: VerificationRecord[] = [];
-  private commits: CommitRecord[] = [];
-  private reveals: RevealRecord[] = [];
-  private revocations: RevocationRecord[] = [];
-  private revokedIds: Set<string> = new Set();
-
-  constructor(filePath: string) {
-    this.filePath = filePath;
-    this.ensureDirectory();
-    this.load();
+  private filePath: string;
+  
+  constructor(options: ReputationStoreOptions = {}) {
+    this.filePath = options.filePath || join(
+      homedir(),
+      '.local',
+      'share',
+      'agora',
+      'reputation.jsonl'
+    );
+    
+    this.ensureFileExists();
   }
-
+  
   /**
-   * Ensure the directory for the log file exists.
+   * Ensure the store file and directory exist.
    */
-  private ensureDirectory(): void {
+  private ensureFileExists(): void {
     const dir = dirname(this.filePath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-  }
-
-  /**
-   * Load all records from the JSONL file.
-   */
-  private load(): void {
-    if (!existsSync(this.filePath)) {
-      return; // Empty store
-    }
-
-    const content = readFileSync(this.filePath, 'utf-8');
-    const lines = content.trim().split('\n').filter(line => line.length > 0);
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line) as LogEntry;
-        this.processEntry(entry);
-      } catch {
-        // Skip malformed lines
-        console.warn(`Skipping malformed JSONL entry: ${line}`);
-      }
-    }
-  }
-
-  /**
-   * Process a log entry and update in-memory state.
-   */
-  private processEntry(entry: LogEntry): void {
-    switch (entry.type) {
-      case 'verification':
-        this.verifications.push(entry.record);
-        break;
-      case 'commit':
-        this.commits.push(entry.record);
-        break;
-      case 'reveal':
-        this.reveals.push(entry.record);
-        break;
-      case 'revocation':
-        this.revocations.push(entry.record);
-        this.revokedIds.add(entry.record.verificationId);
-        break;
-    }
-  }
-
-  /**
-   * Append an entry to the JSONL log.
-   */
-  private append(entry: LogEntry): void {
-    const line = JSON.stringify(entry) + '\n';
-    appendFileSync(this.filePath, line, 'utf-8');
-    this.processEntry(entry);
-  }
-
-  /**
-   * Add a verification record to the store.
-   */
-  addVerification(record: VerificationRecord): void {
-    this.append({ type: 'verification', record });
-  }
-
-  /**
-   * Add a commit record to the store.
-   */
-  addCommit(record: CommitRecord): void {
-    this.append({ type: 'commit', record });
-  }
-
-  /**
-   * Add a reveal record to the store.
-   */
-  addReveal(record: RevealRecord): void {
-    this.append({ type: 'reveal', record });
-  }
-
-  /**
-   * Add a revocation record to the store.
-   */
-  addRevocation(record: RevocationRecord): void {
-    this.append({ type: 'revocation', record });
-  }
-
-  /**
-   * Get all verifications for a specific target (message/output).
-   */
-  getVerificationsForTarget(target: string): VerificationRecord[] {
-    return this.verifications.filter(v => v.target === target && !this.revokedIds.has(v.id));
-  }
-
-  /**
-   * Get all verifications by a specific verifier.
-   */
-  getVerificationsByVerifier(verifier: string): VerificationRecord[] {
-    return this.verifications.filter(v => v.verifier === verifier && !this.revokedIds.has(v.id));
-  }
-
-  /**
-   * Get all verifications in a specific domain.
-   */
-  getVerificationsByDomain(domain: string): VerificationRecord[] {
-    return this.verifications.filter(v => v.domain === domain && !this.revokedIds.has(v.id));
-  }
-
-  /**
-   * Get a commit by its ID.
-   */
-  getCommit(id: string): CommitRecord | undefined {
-    return this.commits.find(c => c.id === id);
-  }
-
-  /**
-   * Get all commits by an agent.
-   */
-  getCommitsByAgent(agent: string): CommitRecord[] {
-    return this.commits.filter(c => c.agent === agent);
-  }
-
-  /**
-   * Get a reveal by commitment ID.
-   */
-  getRevealByCommitment(commitmentId: string): RevealRecord | undefined {
-    return this.reveals.find(r => r.commitmentId === commitmentId);
-  }
-
-  /**
-   * Get all reveals by an agent.
-   */
-  getRevealsByAgent(agent: string): RevealRecord[] {
-    return this.reveals.filter(r => r.agent === agent);
-  }
-
-  /**
-   * Compute trust score for an agent in a domain.
-   */
-  computeTrustScore(agent: string, domain: string, currentTime?: number): TrustScore {
-    // Get all verifications where the target is from this agent
-    // This requires linking targets to agents - for now, we'll compute based on
-    // verifications targeting any outputs/messages in the domain
-    // In a real implementation, we'd need a mapping of target IDs to agent public keys
     
-    // For Phase 1, we'll use a simpler approach: filter verifications by domain
-    // and assume the scoring function handles the rest
-    return computeTrustScore(agent, domain, this.verifications, currentTime, this.revokedIds);
+    // Don't create the file if it doesn't exist - let append do that
   }
-
+  
   /**
-   * Get all stored verifications (excluding revoked).
+   * Append a record to the store.
+   * 
+   * @param record - Record to append
    */
-  getAllVerifications(): VerificationRecord[] {
-    return this.verifications.filter(v => !this.revokedIds.has(v.id));
+  append(record: ReputationRecord): void {
+    const line = JSON.stringify(record) + '\n';
+    appendFileSync(this.filePath, line, 'utf8');
   }
-
+  
   /**
-   * Get all stored commits.
+   * Read all records from the store.
+   * 
+   * @returns Array of all records
    */
-  getAllCommits(): CommitRecord[] {
-    return this.commits;
+  readAll(): ReputationRecord[] {
+    if (!existsSync(this.filePath)) {
+      return [];
+    }
+    
+    const content = readFileSync(this.filePath, 'utf8');
+    if (content.trim() === '') {
+      return [];
+    }
+    
+    const lines = content.split('\n').filter(line => line.trim() !== '');
+    return lines.map(line => JSON.parse(line) as ReputationRecord);
   }
-
+  
   /**
-   * Get all stored reveals.
+   * Get all verification records.
+   * 
+   * @returns Array of verification records
    */
-  getAllReveals(): RevealRecord[] {
-    return this.reveals;
+  getVerifications(): VerificationRecord[] {
+    const records = this.readAll();
+    return records
+      .filter(r => r.type === 'verification')
+      .map(r => r.data as VerificationRecord);
   }
-
+  
   /**
-   * Get all stored revocations.
+   * Get verification records for a specific agent.
+   * 
+   * @param agent - Public key of agent
+   * @param domain - Optional domain filter
+   * @returns Array of verification records
    */
-  getAllRevocations(): RevocationRecord[] {
-    return this.revocations;
+  getVerificationsForAgent(agent: string, domain?: string): VerificationRecord[] {
+    const verifications = this.getVerifications();
+    return verifications.filter(v => {
+      if (v.target !== agent) return false;
+      if (domain && v.domain !== domain) return false;
+      return true;
+    });
   }
-
+  
+  /**
+   * Get all commit records.
+   * 
+   * @returns Array of commit records
+   */
+  getCommits(): CommitRecord[] {
+    const records = this.readAll();
+    return records
+      .filter(r => r.type === 'commit')
+      .map(r => r.data as CommitRecord);
+  }
+  
+  /**
+   * Get a commit record by ID.
+   * 
+   * @param id - Commit record ID
+   * @returns Commit record or undefined if not found
+   */
+  getCommitById(id: string): CommitRecord | undefined {
+    const commits = this.getCommits();
+    return commits.find(c => c.id === id);
+  }
+  
+  /**
+   * Get all reveal records.
+   * 
+   * @returns Array of reveal records
+   */
+  getReveals(): RevealRecord[] {
+    const records = this.readAll();
+    return records
+      .filter(r => r.type === 'reveal')
+      .map(r => r.data as RevealRecord);
+  }
+  
+  /**
+   * Get a reveal record by commitment ID.
+   * 
+   * @param commitmentId - ID of the commit record
+   * @returns Reveal record or undefined if not found
+   */
+  getRevealByCommitmentId(commitmentId: string): RevealRecord | undefined {
+    const reveals = this.getReveals();
+    return reveals.find(r => r.commitmentId === commitmentId);
+  }
+  
+  /**
+   * Get all revocation records.
+   * 
+   * @returns Array of revocation records
+   */
+  getRevocations(): RevocationRecord[] {
+    const records = this.readAll();
+    return records
+      .filter(r => r.type === 'revocation')
+      .map(r => r.data as RevocationRecord);
+  }
+  
   /**
    * Check if a verification has been revoked.
+   * 
+   * @param verificationId - ID of the verification
+   * @returns true if revoked, false otherwise
    */
   isRevoked(verificationId: string): boolean {
-    return this.revokedIds.has(verificationId);
+    const revocations = this.getRevocations();
+    return revocations.some(r => r.verificationId === verificationId);
   }
-
+  
   /**
-   * Get the file path of this store.
+   * Get active (non-revoked) verifications.
+   * 
+   * @returns Array of verification records that haven't been revoked
    */
-  getFilePath(): string {
-    return this.filePath;
+  getActiveVerifications(): VerificationRecord[] {
+    const verifications = this.getVerifications();
+    const revocations = this.getRevocations();
+    const revokedIds = new Set(revocations.map(r => r.verificationId));
+    
+    return verifications.filter(v => !revokedIds.has(v.id));
   }
-}
-
-/**
- * Get the default reputation store path.
- */
-export function getDefaultStorePath(): string {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
-  return `${homeDir}/.local/share/agora/reputation.jsonl`;
+  
+  /**
+   * Get active verifications for a specific agent.
+   * 
+   * @param agent - Public key of agent
+   * @param domain - Optional domain filter
+   * @returns Array of active verification records
+   */
+  getActiveVerificationsForAgent(agent: string, domain?: string): VerificationRecord[] {
+    const verifications = this.getActiveVerifications();
+    return verifications.filter(v => {
+      if (v.target !== agent) return false;
+      if (domain && v.domain !== domain) return false;
+      return true;
+    });
+  }
 }

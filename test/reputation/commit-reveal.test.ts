@@ -3,200 +3,370 @@ import assert from 'node:assert';
 import { generateKeyPair } from '../../src/identity/keypair.js';
 import {
   createCommit,
+  validateCommit,
   createReveal,
+  validateReveal,
   verifyReveal,
   hashPrediction,
-  isCommitmentExpired,
 } from '../../src/reputation/commit-reveal.js';
 
-describe('Commit-Reveal Pattern', () => {
+describe('Commit-Reveal', () => {
   describe('hashPrediction', () => {
-    it('should generate deterministic hash for same prediction', () => {
-      const prediction = 'It will rain in Stockholm on 2026-02-17';
-      const hash1 = hashPrediction(prediction);
-      const hash2 = hashPrediction(prediction);
+    it('should hash prediction deterministically', () => {
+      const pred = 'It will rain in Stockholm';
+      const hash1 = hashPrediction(pred);
+      const hash2 = hashPrediction(pred);
       assert.strictEqual(hash1, hash2);
     });
-
-    it('should generate different hashes for different predictions', () => {
+    
+    it('should produce different hashes for different predictions', () => {
       const hash1 = hashPrediction('prediction A');
       const hash2 = hashPrediction('prediction B');
       assert.notStrictEqual(hash1, hash2);
     });
-
-    it('should return 64-character hex string', () => {
-      const hash = hashPrediction('test');
-      assert.strictEqual(hash.length, 64);
-      assert.ok(/^[0-9a-f]+$/.test(hash));
-    });
   });
-
+  
   describe('createCommit', () => {
     it('should create a valid commit record', () => {
-      const kp = generateKeyPair();
-      const prediction = 'Test prediction';
-      const domain = 'weather_forecast';
-
-      const commit = createCommit(kp.publicKey, kp.privateKey, domain, prediction);
-
-      assert.strictEqual(commit.agent, kp.publicKey);
-      assert.strictEqual(commit.domain, domain);
+      const agent = generateKeyPair();
+      const prediction = 'It will rain tomorrow';
+      
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        prediction
+      );
+      
+      assert.strictEqual(commit.agent, agent.publicKey);
+      assert.strictEqual(commit.domain, 'weather_forecast');
+      assert.strictEqual(commit.commitment, hashPrediction(prediction));
       assert.ok(commit.id);
-      assert.ok(commit.commitment);
       assert.ok(commit.signature);
       assert.ok(commit.timestamp > 0);
       assert.ok(commit.expiry > commit.timestamp);
     });
-
-    it('should generate correct commitment hash', () => {
-      const kp = generateKeyPair();
-      const prediction = 'Test prediction';
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', prediction);
-
-      const expectedHash = hashPrediction(prediction);
-      assert.strictEqual(commit.commitment, expectedHash);
-    });
-
-    it('should respect custom expiry time', () => {
-      const kp = generateKeyPair();
-      const prediction = 'Test';
-      const expiryMs = 1000; // 1 second
-
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', prediction, expiryMs);
-
+    
+    it('should use custom expiry time', () => {
+      const agent = generateKeyPair();
+      const expiryMs = 60 * 60 * 1000; // 1 hour
+      
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        'prediction',
+        expiryMs
+      );
+      
       assert.strictEqual(commit.expiry - commit.timestamp, expiryMs);
     });
-  });
-
-  describe('createReveal', () => {
-    it('should create a valid reveal record', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction');
+    
+    it('should use default 24-hour expiry', () => {
+      const agent = generateKeyPair();
       
-      const reveal = createReveal(
-        kp.publicKey,
-        kp.privateKey,
-        commit.id,
-        'prediction',
-        'outcome observed',
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        'prediction'
       );
-
-      assert.strictEqual(reveal.agent, kp.publicKey);
-      assert.strictEqual(reveal.commitmentId, commit.id);
-      assert.strictEqual(reveal.prediction, 'prediction');
-      assert.strictEqual(reveal.outcome, 'outcome observed');
-      assert.ok(reveal.id);
-      assert.ok(reveal.signature);
-      assert.ok(reveal.timestamp > 0);
-    });
-
-    it('should include evidence when provided', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction');
       
-      const reveal = createReveal(
-        kp.publicKey,
-        kp.privateKey,
-        commit.id,
-        'prediction',
-        'outcome',
-        'https://evidence.com/proof',
-      );
-
-      assert.strictEqual(reveal.evidence, 'https://evidence.com/proof');
-    });
-
-    it('should not include evidence field when not provided', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction');
-      
-      const reveal = createReveal(
-        kp.publicKey,
-        kp.privateKey,
-        commit.id,
-        'prediction',
-        'outcome',
-      );
-
-      assert.strictEqual(reveal.evidence, undefined);
-      assert.ok(!('evidence' in reveal) || reveal.evidence === undefined);
+      const expectedExpiry = 24 * 60 * 60 * 1000;
+      assert.ok(Math.abs((commit.expiry - commit.timestamp) - expectedExpiry) < 100);
     });
   });
-
-  describe('verifyReveal', () => {
-    it('should verify a valid reveal', () => {
-      const kp = generateKeyPair();
-      const prediction = 'Test prediction';
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', prediction);
-      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, prediction, 'outcome');
-
-      const result = verifyReveal(commit, reveal);
-
+  
+  describe('validateCommit', () => {
+    it('should validate a valid commit', () => {
+      const agent = generateKeyPair();
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        'prediction'
+      );
+      
+      const result = validateCommit(commit);
       assert.strictEqual(result.valid, true);
       assert.strictEqual(result.reason, undefined);
     });
-
+    
+    it('should reject commit with invalid signature', () => {
+      const agent = generateKeyPair();
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        'prediction'
+      );
+      
+      commit.signature = '0'.repeat(128);
+      
+      const result = validateCommit(commit);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.reason, 'signature_invalid');
+    });
+    
+    it('should reject commit with tampered ID', () => {
+      const agent = generateKeyPair();
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        'prediction'
+      );
+      
+      commit.id = 'fake_id';
+      
+      const result = validateCommit(commit);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.reason, 'id_mismatch');
+    });
+    
+    it('should reject commit with expiry before timestamp', () => {
+      const agent = generateKeyPair();
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        'prediction'
+      );
+      
+      commit.expiry = commit.timestamp - 1000;
+      
+      const result = validateCommit(commit);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.reason, 'expiry_before_timestamp');
+    });
+  });
+  
+  describe('createReveal', () => {
+    it('should create a valid reveal record', () => {
+      const agent = generateKeyPair();
+      const prediction = 'It will rain tomorrow';
+      const outcome = 'It rained';
+      const commitmentId = 'commit_id_123';
+      
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        commitmentId,
+        prediction,
+        outcome
+      );
+      
+      assert.strictEqual(reveal.agent, agent.publicKey);
+      assert.strictEqual(reveal.commitmentId, commitmentId);
+      assert.strictEqual(reveal.prediction, prediction);
+      assert.strictEqual(reveal.outcome, outcome);
+      assert.ok(reveal.id);
+      assert.ok(reveal.signature);
+      assert.ok(reveal.timestamp > 0);
+      assert.strictEqual(reveal.evidence, undefined);
+    });
+    
+    it('should create reveal with evidence', () => {
+      const agent = generateKeyPair();
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        'commit_id_123',
+        'prediction',
+        'outcome',
+        'https://example.com/evidence'
+      );
+      
+      assert.strictEqual(reveal.evidence, 'https://example.com/evidence');
+    });
+  });
+  
+  describe('validateReveal', () => {
+    it('should validate a valid reveal', () => {
+      const agent = generateKeyPair();
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        'commit_id_123',
+        'prediction',
+        'outcome'
+      );
+      
+      const result = validateReveal(reveal);
+      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.reason, undefined);
+    });
+    
+    it('should reject reveal with invalid signature', () => {
+      const agent = generateKeyPair();
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        'commit_id_123',
+        'prediction',
+        'outcome'
+      );
+      
+      reveal.signature = '0'.repeat(128);
+      
+      const result = validateReveal(reveal);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.reason, 'signature_invalid');
+    });
+    
+    it('should reject reveal with tampered ID', () => {
+      const agent = generateKeyPair();
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        'commit_id_123',
+        'prediction',
+        'outcome'
+      );
+      
+      reveal.id = 'fake_id';
+      
+      const result = validateReveal(reveal);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.reason, 'id_mismatch');
+    });
+  });
+  
+  describe('verifyReveal', () => {
+    it('should verify a valid commit-reveal pair', () => {
+      const agent = generateKeyPair();
+      const prediction = 'It will rain tomorrow in Stockholm';
+      
+      // Create commit
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        prediction,
+        1000 // 1 second expiry for test
+      );
+      
+      // Wait for expiry
+      const waitForExpiry = new Promise(resolve => setTimeout(resolve, 1100));
+      
+      return waitForExpiry.then(() => {
+        // Create reveal after expiry
+        const reveal = createReveal(
+          agent.publicKey,
+          agent.privateKey,
+          commit.id,
+          prediction,
+          'It did rain'
+        );
+        
+        const result = verifyReveal(commit, reveal);
+        assert.strictEqual(result.valid, true);
+        assert.strictEqual(result.reason, undefined);
+      });
+    });
+    
     it('should reject reveal with wrong commitment ID', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction');
-      const reveal = createReveal(kp.publicKey, kp.privateKey, 'wrong-id', 'prediction', 'outcome');
-
+      const agent = generateKeyPair();
+      const prediction = 'prediction';
+      
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        prediction
+      );
+      
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        'wrong_commitment_id',
+        prediction,
+        'outcome'
+      );
+      
       const result = verifyReveal(commit, reveal);
-
       assert.strictEqual(result.valid, false);
       assert.strictEqual(result.reason, 'commitment_id_mismatch');
     });
-
+    
     it('should reject reveal with wrong agent', () => {
-      const kp1 = generateKeyPair();
-      const kp2 = generateKeyPair();
-      const commit = createCommit(kp1.publicKey, kp1.privateKey, 'test', 'prediction');
-      const reveal = createReveal(kp2.publicKey, kp2.privateKey, commit.id, 'prediction', 'outcome');
-
+      const agent1 = generateKeyPair();
+      const agent2 = generateKeyPair();
+      const prediction = 'prediction';
+      
+      const commit = createCommit(
+        agent1.publicKey,
+        agent1.privateKey,
+        'weather_forecast',
+        prediction
+      );
+      
+      const reveal = createReveal(
+        agent2.publicKey,
+        agent2.privateKey,
+        commit.id,
+        prediction,
+        'outcome'
+      );
+      
       const result = verifyReveal(commit, reveal);
-
       assert.strictEqual(result.valid, false);
       assert.strictEqual(result.reason, 'agent_mismatch');
     });
-
-    it('should reject reveal with wrong prediction', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'original prediction');
-      const reveal = createReveal(kp.publicKey, kp.privateKey, commit.id, 'different prediction', 'outcome');
-
+    
+    it('should reject reveal before expiry', () => {
+      const agent = generateKeyPair();
+      const prediction = 'prediction';
+      
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        prediction,
+        60 * 60 * 1000 // 1 hour expiry
+      );
+      
+      const reveal = createReveal(
+        agent.publicKey,
+        agent.privateKey,
+        commit.id,
+        prediction,
+        'outcome'
+      );
+      
       const result = verifyReveal(commit, reveal);
-
       assert.strictEqual(result.valid, false);
-      assert.strictEqual(result.reason, 'prediction_hash_mismatch');
+      assert.strictEqual(result.reason, 'reveal_before_expiry');
     });
-  });
-
-  describe('isCommitmentExpired', () => {
-    it('should return false for non-expired commitment', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction', 1000000);
-
-      assert.strictEqual(isCommitmentExpired(commit), false);
-    });
-
-    it('should return true for expired commitment', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction', -1000);
+    
+    it('should reject reveal with wrong prediction', () => {
+      const agent = generateKeyPair();
+      const correctPrediction = 'It will rain';
+      const wrongPrediction = 'It will be sunny';
       
-      // Wait a bit to ensure expiry
-      const futureTime = Date.now() + 1000;
-      assert.strictEqual(isCommitmentExpired(commit, futureTime), true);
-    });
-
-    it('should use custom current time parameter', () => {
-      const kp = generateKeyPair();
-      const commit = createCommit(kp.publicKey, kp.privateKey, 'test', 'prediction', 1000);
+      const commit = createCommit(
+        agent.publicKey,
+        agent.privateKey,
+        'weather_forecast',
+        correctPrediction,
+        1000
+      );
       
-      const pastTime = commit.timestamp - 1000;
-      assert.strictEqual(isCommitmentExpired(commit, pastTime), false);
+      const waitForExpiry = new Promise(resolve => setTimeout(resolve, 1100));
       
-      const futureTime = commit.expiry + 1000;
-      assert.strictEqual(isCommitmentExpired(commit, futureTime), true);
+      return waitForExpiry.then(() => {
+        const reveal = createReveal(
+          agent.publicKey,
+          agent.privateKey,
+          commit.id,
+          wrongPrediction, // Different prediction!
+          'outcome'
+        );
+        
+        const result = verifyReveal(commit, reveal);
+        assert.strictEqual(result.valid, false);
+        assert.strictEqual(result.reason, 'prediction_hash_mismatch');
+      });
     });
   });
 });
