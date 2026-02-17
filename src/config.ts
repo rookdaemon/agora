@@ -18,8 +18,10 @@ export interface RelayConfig {
  */
 export interface AgoraPeerConfig {
   publicKey: string;
-  url: string;
-  token: string;
+  /** Webhook URL (undefined for relay-only peers) */
+  url?: string;
+  /** Webhook auth token (undefined for relay-only peers) */
+  token?: string;
   name?: string;
 }
 
@@ -70,11 +72,11 @@ function parseConfig(config: Record<string, unknown>): AgoraConfig {
   if (config.peers && typeof config.peers === 'object') {
     for (const [name, entry] of Object.entries(config.peers)) {
       const peer = entry as Record<string, unknown>;
-      if (peer && typeof peer.publicKey === 'string' && typeof peer.url === 'string' && typeof peer.token === 'string') {
+      if (peer && typeof peer.publicKey === 'string') {
         peers[name] = {
           publicKey: peer.publicKey as string,
-          url: peer.url as string,
-          token: peer.token as string,
+          url: typeof peer.url === 'string' ? peer.url : undefined,
+          token: typeof peer.token === 'string' ? peer.token : undefined,
           name: typeof peer.name === 'string' ? peer.name : undefined,
         };
       }

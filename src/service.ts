@@ -5,6 +5,7 @@ import type { MessageType } from './message/envelope.js';
 import { RelayClient } from './relay/client.js';
 import type { PeerConfig } from './transport/http.js';
 import { decodeInboundEnvelope, sendToPeer } from './transport/http.js';
+import { sendViaRelay } from './transport/relay.js';
 import { shortKey } from './utils.js';
 
 /**
@@ -46,6 +47,7 @@ export interface RelayClientLike {
   connect(): Promise<void>;
   disconnect(): void;
   connected(): boolean;
+  send(to: string, envelope: Envelope): Promise<{ ok: boolean; error?: string }>;
   on(event: 'message', handler: (envelope: Envelope, from: string, fromName?: string) => void): void;
   on(event: 'error', handler: (error: Error) => void): void;
 }
@@ -84,6 +86,7 @@ export class AgoraService {
 
   /**
    * Send a signed message to a named peer.
+   * Tries HTTP webhook first; falls back to relay if HTTP is unavailable.
    */
   async sendMessage(options: SendMessageOptions): Promise<SendMessageResult> {
     const peer = this.config.peers.get(options.peerName);
@@ -95,21 +98,60 @@ export class AgoraService {
       };
     }
 
-    const transportConfig = {
-      identity: {
-        publicKey: this.config.identity.publicKey,
-        privateKey: this.config.identity.privateKey,
-      },
-      peers: new Map<string, PeerConfig>([[peer.publicKey, peer]]),
-    };
+    // Try HTTP first (only if peer has a webhook URL)
+    if (peer.url) {
+      const transportConfig = {
+        identity: {
+          publicKey: this.config.identity.publicKey,
+          privateKey: this.config.identity.privateKey,
+        },
+        peers: new Map<string, PeerConfig>([[peer.publicKey, peer]]),
+      };
 
-    return sendToPeer(
-      transportConfig,
-      peer.publicKey,
-      options.type,
-      options.payload,
-      options.inReplyTo
-    );
+      const httpResult = await sendToPeer(
+        transportConfig,
+        peer.publicKey,
+        options.type,
+        options.payload,
+        options.inReplyTo
+      );
+
+      if (httpResult.ok) {
+        return httpResult;
+      }
+
+      this.logger?.debug(`HTTP send to ${options.peerName} failed: ${httpResult.error}`);
+    }
+
+    // Fall back to relay
+    if (this.relayClient?.connected() && this.config.relay) {
+      const relayResult = await sendViaRelay(
+        {
+          identity: this.config.identity,
+          relayUrl: this.config.relay.url,
+          relayClient: this.relayClient,
+        },
+        peer.publicKey,
+        options.type,
+        options.payload,
+        options.inReplyTo
+      );
+
+      return {
+        ok: relayResult.ok,
+        status: 0,
+        error: relayResult.error,
+      };
+    }
+
+    // Both failed
+    return {
+      ok: false,
+      status: 0,
+      error: peer.url
+        ? `HTTP send failed and relay not available for peer: ${options.peerName}`
+        : `No webhook URL and relay not available for peer: ${options.peerName}`,
+    };
   }
 
   /**
@@ -219,7 +261,7 @@ export class AgoraService {
         publicKey: p.publicKey,
         url: p.url,
         token: p.token,
-      });
+      } satisfies PeerConfig);
     }
 
     return {

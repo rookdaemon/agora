@@ -1,6 +1,11 @@
 import WebSocket from 'ws';
 import { createEnvelope, type Envelope, type MessageType } from '../message/envelope.js';
-import type { RelayClient } from '../relay/client.js';
+
+/** Minimal interface for a connected relay client (avoids importing full RelayClient) */
+export interface RelayClientSender {
+  connected(): boolean;
+  send(to: string, envelope: Envelope): Promise<{ ok: boolean; error?: string }>;
+}
 
 export interface RelayTransportConfig {
   /** This agent's keypair */
@@ -8,7 +13,7 @@ export interface RelayTransportConfig {
   /** Relay server WebSocket URL (e.g., wss://agora-relay.lbsa71.net) */
   relayUrl: string;
   /** Optional persistent relay client (if provided, will use it instead of connect-per-message) */
-  relayClient?: RelayClient;
+  relayClient?: RelayClientSender;
 }
 
 /**

@@ -1,10 +1,10 @@
 import { createEnvelope, verifyEnvelope, type Envelope, type MessageType } from '../message/envelope.js';
 
 export interface PeerConfig {
-  /** Peer's webhook URL, e.g. http://localhost:18790/hooks */
-  url: string;
-  /** Peer's webhook auth token */
-  token: string;
+  /** Peer's webhook URL, e.g. http://localhost:18790/hooks (undefined for relay-only peers) */
+  url?: string;
+  /** Peer's webhook auth token (undefined for relay-only peers) */
+  token?: string;
   /** Peer's public key (hex) for verifying responses */
   publicKey: string;
 }
@@ -32,6 +32,11 @@ export async function sendToPeer(
   const peer = config.peers.get(peerPublicKey);
   if (!peer) {
     return { ok: false, status: 0, error: 'Unknown peer' };
+  }
+
+  // Relay-only peer — no webhook URL configured
+  if (!peer.url) {
+    return { ok: false, status: 0, error: 'No webhook URL configured' };
   }
 
   // Create and sign the envelope

@@ -86,6 +86,27 @@ describe('HTTP Transport', () => {
       assert.strictEqual(verification.valid, true);
     });
 
+    it('should return error for peer with no webhook URL', async () => {
+      const identity = generateKeyPair();
+      const peerIdentity = generateKeyPair();
+
+      const peer: PeerConfig = {
+        publicKey: peerIdentity.publicKey,
+        // no url or token — relay-only peer
+      };
+
+      const config: TransportConfig = {
+        identity,
+        peers: new Map([[peerIdentity.publicKey, peer]]),
+      };
+
+      const result = await sendToPeer(config, peerIdentity.publicKey, 'announce', { test: true });
+
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(result.status, 0);
+      assert.strictEqual(result.error, 'No webhook URL configured');
+    });
+
     it('should handle network errors', async () => {
       const identity = generateKeyPair();
       const peerIdentity = generateKeyPair();
