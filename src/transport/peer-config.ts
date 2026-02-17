@@ -5,8 +5,12 @@ export interface PeerConfigFile {
   identity: {
     publicKey: string;
     privateKey: string;
+    name?: string;
   };
-  relay?: string;
+  relay?: string | {
+    url: string;
+    name?: string;
+  };
   peers: Record<string, {
     url?: string;
     token?: string;

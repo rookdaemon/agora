@@ -14,6 +14,7 @@ import { RelayServer } from './relay/server.js';
 import { RelayClient } from './relay/client.js';
 import { PeerDiscoveryService } from './discovery/peer-discovery.js';
 import { getDefaultBootstrapRelay } from './discovery/bootstrap.js';
+import { resolveBroadcastName } from './utils.js';
 
 interface CliOptions {
   config?: string;
@@ -274,7 +275,7 @@ async function handlePeersDiscover(
     relayPublicKey = options['relay-pubkey'];
   } else if (config.relay) {
     // Use relay from config
-    relayUrl = config.relay;
+    relayUrl = typeof config.relay === 'string' ? config.relay : config.relay.url;
     // TODO: Add relayPublicKey to config schema in future
     relayPublicKey = undefined;
   } else {
@@ -303,11 +304,15 @@ async function handlePeersDiscover(
     filters.limit = limit;
   }
 
+  // Resolve broadcast name
+  const broadcastName = resolveBroadcastName(config, undefined);
+
   // Connect to relay
   const relayClient = new RelayClient({
     relayUrl,
     publicKey: config.identity.publicKey,
     privateKey: config.identity.privateKey,
+    name: broadcastName,
   });
 
   try {
@@ -484,20 +489,21 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
         }, options.pretty || false);
         process.exit(1);
       }
-    } else if (hasRelay) {
-      // Use relay transport
-      // Non-null assertion: we know relay is a string here
-      const relayConfig = {
-        identity: config.identity,
-        relayUrl: config.relay!,
-      };
+      } else if (hasRelay && config.relay) {
+        // Use relay transport
+        // Extract URL from relay (string or object)
+        const relayUrl = typeof config.relay === 'string' ? config.relay : config.relay.url;
+        const relayConfig = {
+          identity: config.identity,
+          relayUrl,
+        };
 
-      const result = await sendViaRelay(
-        relayConfig,
-        peer.publicKey,
-        messageType,
-        messagePayload
-      );
+        const result = await sendViaRelay(
+          relayConfig,
+          peer.publicKey,
+          messageType,
+          messagePayload
+        );
 
       if (result.ok) {
         output({ 
@@ -675,11 +681,13 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
             error: result.error,
           });
         }
-      } else if (hasRelay) {
+      } else if (hasRelay && config.relay) {
         // Use relay transport
+        // Extract URL from relay (string or object)
+        const relayUrl = typeof config.relay === 'string' ? config.relay : config.relay.url;
         const relayConfig = {
           identity: config.identity,
-          relayUrl: config.relay!,
+          relayUrl,
         };
 
         const result = await sendViaRelay(
@@ -878,7 +886,8 @@ async function handleServe(options: CliOptions & { port?: string; name?: string 
     process.exit(1);
   }
   
-  const serverName = options.name || 'agora-server';
+  // Resolve server name using priority: CLI --name, config.relay.name, config.identity.name, default
+  const serverName = resolveBroadcastName(config, options.name) || 'agora-server';
 
   // Create announce payload
   const announcePayload: AnnouncePayload = {
