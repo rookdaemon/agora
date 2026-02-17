@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts test/**/*.test.ts",
     "lint": "eslint src test --ext .ts",
     "prepublishOnly": "npm run lint && npm run build && npm test",
     "pretest": "npm run build"
