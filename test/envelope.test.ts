@@ -51,7 +51,7 @@ describe('Envelope', () => {
     it('should create an envelope with inReplyTo', () => {
       const kp = generateKeyPair();
       const original = createEnvelope('request', kp.publicKey, kp.privateKey, { query: 'help' });
-      const reply = createEnvelope('response', kp.publicKey, kp.privateKey, { answer: 'yes' }, original.id);
+      const reply = createEnvelope('response', kp.publicKey, kp.privateKey, { answer: 'yes' }, 1000000000, original.id);
 
       assert.strictEqual(reply.inReplyTo, original.id);
     });
@@ -87,7 +87,7 @@ describe('Envelope', () => {
 
     it('should verify an envelope with inReplyTo', () => {
       const kp = generateKeyPair();
-      const env = createEnvelope('response', kp.publicKey, kp.privateKey, { data: 42 }, 'abc123');
+      const env = createEnvelope('response', kp.publicKey, kp.privateKey, { data: 42 }, 1000000000, 'abc123');
 
       const result = verifyEnvelope(env);
       assert.strictEqual(result.valid, true);

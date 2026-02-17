@@ -18,7 +18,8 @@ describe('Verification', () => {
         'target123',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        1000000000
       );
       
       assert.strictEqual(verification.verifier, keypair.publicKey);
@@ -42,6 +43,7 @@ describe('Verification', () => {
         'ocr',
         'correct',
         0.95,
+        1000000000,
         evidence
       );
       
@@ -51,13 +53,15 @@ describe('Verification', () => {
     it('should support all verdict types', () => {
       const keypair = generateKeyPair();
       
+      const timestamp = 1000000000;
       const correct = createVerification(
         keypair.publicKey,
         keypair.privateKey,
         'target1',
         'ocr',
         'correct',
-        0.9
+        0.9,
+        timestamp
       );
       assert.strictEqual(correct.verdict, 'correct');
       
@@ -67,7 +71,8 @@ describe('Verification', () => {
         'target2',
         'ocr',
         'incorrect',
-        0.8
+        0.8,
+        timestamp
       );
       assert.strictEqual(incorrect.verdict, 'incorrect');
       
@@ -77,7 +82,8 @@ describe('Verification', () => {
         'target3',
         'ocr',
         'disputed',
-        0.5
+        0.5,
+        timestamp
       );
       assert.strictEqual(disputed.verdict, 'disputed');
     });
@@ -92,7 +98,8 @@ describe('Verification', () => {
           'target123',
           'ocr',
           'correct',
-          1.5
+          1.5,
+          1000000000
         );
       }, /confidence must be between 0 and 1/);
       
@@ -103,7 +110,8 @@ describe('Verification', () => {
           'target123',
           'ocr',
           'correct',
-          -0.1
+          -0.1,
+          1000000000
         );
       }, /confidence must be between 0 and 1/);
     });
@@ -119,7 +127,8 @@ describe('Verification', () => {
         'target123',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        1000000000
       );
       
       const result = verifyVerificationSignature(verification);
@@ -136,7 +145,8 @@ describe('Verification', () => {
         'target123',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        1000000000
       );
       
       // Tamper with the target
@@ -155,7 +165,8 @@ describe('Verification', () => {
         'target123',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        1000000000
       );
       
       // Tamper with the verdict
@@ -175,6 +186,7 @@ describe('Verification', () => {
         'ocr',
         'correct',
         0.95,
+        1000000000,
         'https://example.com/evidence'
       );
       

@@ -150,6 +150,7 @@ export class DiscoveryService {
       this.identity.publicKey,
       this.identity.privateKey,
       responsePayload,
+      Date.now(),
       envelope.id // inReplyTo
     );
   }
@@ -160,7 +161,7 @@ export class DiscoveryService {
    * @param maxAgeMs - Maximum age in milliseconds
    * @returns Number of peers removed
    */
-  pruneStale(maxAgeMs: number): number {
-    return this.peerStore.prune(maxAgeMs);
+  pruneStale(maxAgeMs: number, currentTime: number = Date.now()): number {
+    return this.peerStore.prune(maxAgeMs, currentTime);
   }
 }

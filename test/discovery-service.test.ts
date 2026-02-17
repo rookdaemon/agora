@@ -408,7 +408,7 @@ describe('DiscoveryService', () => {
       const identity = generateKeyPair();
       const service = new DiscoveryService(peerStore, identity);
       
-      const now = Date.now();
+      const now = 1000000000;
       
       // Add old peer
       const oldPeerIdentity = generateKeyPair();
@@ -430,7 +430,7 @@ describe('DiscoveryService', () => {
       service.handleAnnounce(recentService.announce([createCapability('recent', '1.0.0', 'Recent')]));
       
       // Prune peers older than 5 seconds
-      const removed = service.pruneStale(5000);
+      const removed = service.pruneStale(5000, now);
       
       assert.strictEqual(removed, 1);
       assert.strictEqual(peerStore.getPeer(oldPeerIdentity.publicKey), undefined);
@@ -441,13 +441,14 @@ describe('DiscoveryService', () => {
       const peerStore = new PeerStore();
       const identity = generateKeyPair();
       const service = new DiscoveryService(peerStore, identity);
+      const now = 1000000000;
       
       // Add recent peer
       const peerIdentity = generateKeyPair();
       const peerService = new DiscoveryService(new PeerStore(), peerIdentity);
       service.handleAnnounce(peerService.announce([createCapability('test', '1.0.0', 'Test')]));
       
-      const removed = service.pruneStale(1000);
+      const removed = service.pruneStale(1000, now);
       
       assert.strictEqual(removed, 0);
       assert.ok(peerStore.getPeer(peerIdentity.publicKey));

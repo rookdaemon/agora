@@ -221,6 +221,7 @@ describe('Registry Messages', () => {
         kp.publicKey,
         kp.privateKey,
         responsePayload,
+        1000000000,
         discoverEnvelope.id
       );
       
@@ -287,6 +288,7 @@ describe('Registry Messages', () => {
         agent1.publicKey,
         agent1.privateKey,
         responsePayload,
+        1000000000,
         discoverEnvelope.id
       );
       

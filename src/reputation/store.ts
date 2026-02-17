@@ -44,6 +44,7 @@ export class ReputationStore {
           
           switch (record.type) {
             case 'verification': {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const { type, ...verification } = record;
               const validation = validateVerificationRecord(verification);
               if (validation.valid) {
@@ -52,6 +53,7 @@ export class ReputationStore {
               break;
             }
             case 'commit': {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const { type, ...commit } = record;
               const validation = validateCommitRecord(commit);
               if (validation.valid) {
@@ -60,6 +62,7 @@ export class ReputationStore {
               break;
             }
             case 'reveal': {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const { type, ...reveal } = record;
               const validation = validateRevealRecord(reveal);
               if (validation.valid) {
@@ -68,7 +71,7 @@ export class ReputationStore {
               break;
             }
           }
-        } catch (parseError) {
+        } catch {
           // Skip invalid lines
           continue;
         }

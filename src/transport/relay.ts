@@ -30,6 +30,7 @@ export async function sendViaRelay(
       config.identity.publicKey,
       config.identity.privateKey,
       payload,
+      Date.now(),
       inReplyTo
     );
     return config.relayClient.send(peerPublicKey, envelope);
@@ -81,6 +82,7 @@ export async function sendViaRelay(
             config.identity.publicKey,
             config.identity.privateKey,
             payload,
+            Date.now(),
             inReplyTo
           );
 

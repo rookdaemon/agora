@@ -290,7 +290,7 @@ describe('HTTP Transport', () => {
       // Bob's reply
       const reply = createEnvelope('response', bob.publicKey, bob.privateKey, {
         status: 'ok',
-      }, request.id);
+      }, 1000000000, request.id);
 
       // Encode Bob's reply
       const envelopeJson = JSON.stringify(reply);

@@ -397,6 +397,7 @@ export class RelayServer extends EventEmitter {
       this.identity.publicKey,
       this.identity.privateKey,
       response,
+      Date.now(),
       envelope.id // Reply to the request
     );
 

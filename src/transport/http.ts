@@ -40,6 +40,7 @@ export async function sendToPeer(
     config.identity.publicKey,
     config.identity.privateKey,
     payload,
+    Date.now(),
     inReplyTo
   );
 

@@ -90,6 +90,7 @@ export function computeId(canonical: string): string {
  * @param sender - Sender's public key (hex)
  * @param privateKey - Sender's private key (hex) for signing
  * @param payload - The message payload
+ * @param timestamp - Timestamp for the envelope (ms), defaults to Date.now()
  * @param inReplyTo - Optional ID of the message being replied to
  * @returns A signed Envelope
  */
@@ -98,9 +99,9 @@ export function createEnvelope<T>(
   sender: string,
   privateKey: string,
   payload: T,
+  timestamp: number = Date.now(),
   inReplyTo?: string,
 ): Envelope<T> {
-  const timestamp = Date.now();
   const canonical = canonicalize(type, sender, timestamp, payload, inReplyTo);
   const id = computeId(canonical);
   const signature = signMessage(canonical, privateKey);

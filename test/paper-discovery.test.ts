@@ -81,7 +81,7 @@ describe('PaperDiscoveryPayload', () => {
   it('should support inReplyTo for threaded discussion', () => {
     const kp = generateKeyPair();
     const original = createEnvelope('paper_discovery', kp.publicKey, kp.privateKey, samplePayload);
-    const reply = createEnvelope('response', kp.publicKey, kp.privateKey, { comment: 'Interesting paper!' }, original.id);
+    const reply = createEnvelope('response', kp.publicKey, kp.privateKey, { comment: 'Interesting paper!' }, 1000000000, original.id);
 
     assert.strictEqual(reply.inReplyTo, original.id);
     const result = verifyEnvelope(reply);

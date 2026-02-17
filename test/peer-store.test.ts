@@ -11,7 +11,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'abc123',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
@@ -48,12 +48,12 @@ describe('PeerStore', () => {
       const peer1: Peer = {
         publicKey: 'peer1',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer2: Peer = {
         publicKey: 'peer2',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer1);
@@ -69,7 +69,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'abc123',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
@@ -93,7 +93,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'abc123',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
@@ -119,17 +119,17 @@ describe('PeerStore', () => {
       const peer1: Peer = {
         publicKey: 'peer1',
         capabilities: [codeReviewCap],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer2: Peer = {
         publicKey: 'peer2',
         capabilities: [translationCap],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer3: Peer = {
         publicKey: 'peer3',
         capabilities: [codeReviewCap, translationCap],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer1);
@@ -149,7 +149,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'peer1',
         capabilities: [createCapability('test', '1.0.0', 'Test')],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
@@ -182,17 +182,17 @@ describe('PeerStore', () => {
       const peer1: Peer = {
         publicKey: 'peer1',
         capabilities: [cap1],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer2: Peer = {
         publicKey: 'peer2',
         capabilities: [cap2],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer3: Peer = {
         publicKey: 'peer3',
         capabilities: [cap3],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer1);
@@ -215,7 +215,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'peer1',
         capabilities: [cap1, cap2],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
@@ -234,7 +234,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'peer1',
         capabilities: [createCapability('test', '1.0.0', 'Test', { tags: ['other'] })],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
@@ -257,12 +257,12 @@ describe('PeerStore', () => {
       const peer1: Peer = {
         publicKey: 'peer1',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer2: Peer = {
         publicKey: 'peer2',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer1);
@@ -286,7 +286,7 @@ describe('PeerStore', () => {
   describe('prune', () => {
     it('should remove peers older than maxAgeMs', () => {
       const store = new PeerStore();
-      const now = Date.now();
+      const now = 1000000000;
       
       const oldPeer: Peer = {
         publicKey: 'old',
@@ -302,7 +302,7 @@ describe('PeerStore', () => {
       store.addOrUpdatePeer(oldPeer);
       store.addOrUpdatePeer(recentPeer);
       
-      const removed = store.prune(5000); // Remove peers older than 5 seconds
+      const removed = store.prune(5000, now); // Remove peers older than 5 seconds
       
       assert.strictEqual(removed, 1);
       assert.strictEqual(store.getPeer('old'), undefined);
@@ -311,7 +311,7 @@ describe('PeerStore', () => {
 
     it('should keep peers within the maxAgeMs threshold', () => {
       const store = new PeerStore();
-      const now = Date.now();
+      const now = 1000000000;
       
       const peer1: Peer = {
         publicKey: 'peer1',
@@ -327,7 +327,7 @@ describe('PeerStore', () => {
       store.addOrUpdatePeer(peer1);
       store.addOrUpdatePeer(peer2);
       
-      const removed = store.prune(5000);
+      const removed = store.prune(5000, now);
       
       assert.strictEqual(removed, 0);
       assert.strictEqual(store.allPeers().length, 2);
@@ -335,7 +335,7 @@ describe('PeerStore', () => {
 
     it('should remove all peers when all are stale', () => {
       const store = new PeerStore();
-      const now = Date.now();
+      const now = 1000000000;
       
       const peer1: Peer = {
         publicKey: 'peer1',
@@ -351,7 +351,7 @@ describe('PeerStore', () => {
       store.addOrUpdatePeer(peer1);
       store.addOrUpdatePeer(peer2);
       
-      const removed = store.prune(5000);
+      const removed = store.prune(5000, now);
       
       assert.strictEqual(removed, 2);
       assert.strictEqual(store.allPeers().length, 0);
@@ -362,18 +362,18 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'peer1',
         capabilities: [],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer);
-      const removed = store.prune(1000);
+      const removed = store.prune(1000, 1000000000);
       
       assert.strictEqual(removed, 0);
     });
 
     it('should return 0 for empty store', () => {
       const store = new PeerStore();
-      const removed = store.prune(1000);
+      const removed = store.prune(1000, 1000000000);
       
       assert.strictEqual(removed, 0);
     });
@@ -390,7 +390,7 @@ describe('PeerStore', () => {
       const peer: Peer = {
         publicKey: 'test-peer',
         capabilities: [capability],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
         metadata: {
           name: 'Code Reviewer Bot',
           version: '1.0.0',
@@ -408,7 +408,7 @@ describe('PeerStore', () => {
       assert.strictEqual(byTag.length, 1);
       
       // Update peer
-      const updatedPeer = { ...peer, lastSeen: Date.now() + 1000 };
+      const updatedPeer = { ...peer, lastSeen: 1000000000 + 1000 };
       store.addOrUpdatePeer(updatedPeer);
       
       const retrieved = store.getPeer('test-peer');
@@ -436,17 +436,17 @@ describe('PeerStore', () => {
       const peer1: Peer = {
         publicKey: 'peer1',
         capabilities: [reviewCap],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer2: Peer = {
         publicKey: 'peer2',
         capabilities: [translateCap, summarizeCap],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       const peer3: Peer = {
         publicKey: 'peer3',
         capabilities: [reviewCap, summarizeCap],
-        lastSeen: Date.now(),
+        lastSeen: 1000000000,
       };
       
       store.addOrUpdatePeer(peer1);

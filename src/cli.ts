@@ -18,7 +18,7 @@ import { resolveBroadcastName } from './utils.js';
 import { ReputationStore } from './reputation/store.js';
 import { createVerification } from './reputation/verification.js';
 import { createCommit, createReveal, verifyReveal } from './reputation/commit-reveal.js';
-import { computeTrustScore, computeTrustScores } from './reputation/scoring.js';
+import { computeTrustScore } from './reputation/scoring.js';
 
 interface CliOptions {
   config?: string;
@@ -1078,6 +1078,7 @@ async function handleReputationVerify(
     options.domain,
     options.verdict as 'correct' | 'incorrect' | 'disputed',
     confidence,
+    Date.now(),
     options.evidence
   );
 
@@ -1139,6 +1140,7 @@ async function handleReputationCommit(
     config.identity.privateKey,
     options.domain,
     options.prediction,
+    Date.now(),
     expiryMs
   );
 
@@ -1204,6 +1206,7 @@ async function handleReputationReveal(
     options['commit-id'],
     options.prediction,
     options.outcome,
+    Date.now(),
     options.evidence
   );
   
@@ -1266,7 +1269,7 @@ async function handleReputationQuery(
   const agentVerifications = verifications.filter(v => v.target === agent);
 
   // Compute trust score
-  const score = computeTrustScore(agent, options.domain, agentVerifications);
+  const score = computeTrustScore(agent, options.domain, agentVerifications, Date.now());
 
   output({
     agent: score.agent,

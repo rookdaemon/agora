@@ -15,6 +15,7 @@ import { validateVerificationRecord } from './types.js';
  * @param domain - Capability domain
  * @param verdict - Verification verdict
  * @param confidence - Verifier's confidence (0-1)
+ * @param timestamp - Timestamp for the verification (ms)
  * @param evidence - Optional link to verification evidence
  * @returns Signed VerificationRecord
  */
@@ -25,14 +26,13 @@ export function createVerification(
   domain: string,
   verdict: 'correct' | 'incorrect' | 'disputed',
   confidence: number,
+  timestamp: number,
   evidence?: string
 ): VerificationRecord {
   // Validate confidence range
   if (confidence < 0 || confidence > 1) {
     throw new Error('confidence must be between 0 and 1');
   }
-  
-  const timestamp = Date.now();
   
   // Create the payload for signing
   const payload: Record<string, unknown> = {
@@ -49,7 +49,7 @@ export function createVerification(
   }
   
   // Create signed envelope with type 'verification'
-  const envelope = createEnvelope('verification', verifier, privateKey, payload);
+  const envelope = createEnvelope('verification', verifier, privateKey, payload, timestamp);
   
   // Return verification record
   const record: VerificationRecord = {

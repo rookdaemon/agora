@@ -20,7 +20,7 @@ describe('Reputation Types', () => {
         domain: 'ocr',
         verdict: 'correct' as const,
         confidence: 0.95,
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -42,7 +42,7 @@ describe('Reputation Types', () => {
         domain: 'ocr',
         verdict: 'correct' as const,
         confidence: 0.95,
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -59,7 +59,7 @@ describe('Reputation Types', () => {
         domain: 'ocr',
         verdict: 'invalid',
         confidence: 0.95,
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -76,7 +76,7 @@ describe('Reputation Types', () => {
         domain: 'ocr',
         verdict: 'correct' as const,
         confidence: 1.5,
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -94,7 +94,7 @@ describe('Reputation Types', () => {
         verdict: 'correct' as const,
         confidence: 0.95,
         evidence: 'https://example.com/evidence',
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -110,8 +110,8 @@ describe('Reputation Types', () => {
         agent: 'agent123',
         domain: 'weather_forecast',
         commitment: 'a'.repeat(64),
-        timestamp: Date.now(),
-        expiry: Date.now() + 86400000,
+        timestamp: 1000000000,
+        expiry: 1000000000 + 86400000,
         signature: 'sig123',
       };
       
@@ -126,8 +126,8 @@ describe('Reputation Types', () => {
         agent: 'agent123',
         domain: 'weather_forecast',
         commitment: 'tooshort',
-        timestamp: Date.now(),
-        expiry: Date.now() + 86400000,
+        timestamp: 1000000000,
+        expiry: 1000000000 + 86400000,
         signature: 'sig123',
       };
       
@@ -137,7 +137,7 @@ describe('Reputation Types', () => {
     });
 
     it('should reject expiry before timestamp', () => {
-      const now = Date.now();
+      const now = 1000000000;
       const record = {
         id: 'commit123',
         agent: 'agent123',
@@ -162,7 +162,7 @@ describe('Reputation Types', () => {
         commitmentId: 'commit123',
         prediction: 'It will rain tomorrow',
         outcome: 'rain observed',
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -177,7 +177,7 @@ describe('Reputation Types', () => {
         agent: 'agent123',
         commitmentId: 'commit123',
         outcome: 'rain observed',
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       
@@ -194,7 +194,7 @@ describe('Reputation Types', () => {
         prediction: 'It will rain tomorrow',
         outcome: 'rain observed',
         evidence: 'https://weather.com/api',
-        timestamp: Date.now(),
+        timestamp: 1000000000,
         signature: 'sig123',
       };
       

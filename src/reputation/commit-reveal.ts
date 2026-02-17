@@ -23,7 +23,8 @@ export function hashPrediction(prediction: string): string {
  * @param privateKey - Private key for signing
  * @param domain - Domain of the prediction
  * @param prediction - The prediction to commit to
- * @param expiryMs - Expiry time in milliseconds from now
+ * @param timestamp - Timestamp for the commit (ms)
+ * @param expiryMs - Expiry time in milliseconds from timestamp
  * @returns Signed CommitRecord
  */
 export function createCommit(
@@ -31,9 +32,9 @@ export function createCommit(
   privateKey: string,
   domain: string,
   prediction: string,
+  timestamp: number,
   expiryMs: number
 ): CommitRecord {
-  const timestamp = Date.now();
   const commitment = hashPrediction(prediction);
   const expiry = timestamp + expiryMs;
   
@@ -47,7 +48,7 @@ export function createCommit(
   };
   
   // Create signed envelope with type 'commit'
-  const envelope = createEnvelope('commit', agent, privateKey, payload);
+  const envelope = createEnvelope('commit', agent, privateKey, payload, timestamp);
   
   // Return commit record
   return {
@@ -68,6 +69,7 @@ export function createCommit(
  * @param commitmentId - ID of the original commit record
  * @param prediction - The original prediction (plaintext)
  * @param outcome - The observed outcome
+ * @param timestamp - Timestamp for the reveal (ms)
  * @param evidence - Optional evidence for the outcome
  * @returns Signed RevealRecord
  */
@@ -77,9 +79,9 @@ export function createReveal(
   commitmentId: string,
   prediction: string,
   outcome: string,
+  timestamp: number,
   evidence?: string
 ): RevealRecord {
-  const timestamp = Date.now();
   
   // Create the payload for signing
   const payload: Record<string, unknown> = {
@@ -95,7 +97,7 @@ export function createReveal(
   }
   
   // Create signed envelope with type 'reveal'
-  const envelope = createEnvelope('reveal', agent, privateKey, payload);
+  const envelope = createEnvelope('reveal', agent, privateKey, payload, timestamp);
   
   // Return reveal record
   const record: RevealRecord = {

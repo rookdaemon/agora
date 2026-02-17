@@ -37,14 +37,14 @@ function verdictWeight(verdict: 'correct' | 'incorrect' | 'disputed'): number {
  * @param agent - Public key of the agent being scored
  * @param domain - Capability domain
  * @param verifications - All verification records (will be filtered by target and domain)
- * @param currentTime - Current timestamp (ms), defaults to Date.now()
+ * @param currentTime - Current timestamp (ms)
  * @returns TrustScore object with computed reputation
  */
 export function computeTrustScore(
   agent: string,
   domain: string,
   verifications: VerificationRecord[],
-  currentTime: number = Date.now()
+  currentTime: number
 ): TrustScore {
   // Filter verifications for this agent and domain
   const relevantVerifications = verifications.filter(
@@ -107,13 +107,13 @@ export function computeTrustScore(
  * Compute trust scores for an agent across multiple domains
  * @param agent - Public key of the agent being scored
  * @param verifications - All verification records
- * @param currentTime - Current timestamp (ms), defaults to Date.now()
+ * @param currentTime - Current timestamp (ms)
  * @returns Map of domain to TrustScore
  */
 export function computeTrustScores(
   agent: string,
   verifications: VerificationRecord[],
-  currentTime: number = Date.now()
+  currentTime: number
 ): Map<string, TrustScore> {
   // Get unique domains for this agent
   const domains = new Set(

@@ -43,12 +43,14 @@ describe('Commit-Reveal', () => {
       const keypair = generateKeyPair();
       const prediction = 'It will rain tomorrow';
       const expiryMs = 86400000; // 24 hours
+      const timestamp = 1000000000;
       
       const commit = createCommit(
         keypair.publicKey,
         keypair.privateKey,
         'weather_forecast',
         prediction,
+        timestamp,
         expiryMs
       );
       
@@ -73,7 +75,8 @@ describe('Commit-Reveal', () => {
         keypair.privateKey,
         commitmentId,
         prediction,
-        outcome
+        outcome,
+        1000000000
       );
       
       assert.strictEqual(reveal.agent, keypair.publicKey);
@@ -94,6 +97,7 @@ describe('Commit-Reveal', () => {
         'commit123',
         'It will rain tomorrow',
         'rain observed',
+        1000000000,
         evidence
       );
       
@@ -102,28 +106,30 @@ describe('Commit-Reveal', () => {
   });
 
   describe('verifyReveal', () => {
-    it('should verify a valid reveal against its commit', async () => {
+    it('should verify a valid reveal against its commit', () => {
       const keypair = generateKeyPair();
       const prediction = 'It will rain tomorrow';
       const expiryMs = 1000; // 1 second
       
+      const commitTimestamp = 1000000000;
       const commit = createCommit(
         keypair.publicKey,
         keypair.privateKey,
         'weather_forecast',
         prediction,
+        commitTimestamp,
         expiryMs
       );
       
-      // Wait for expiry
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      
+      // Reveal after expiry
+      const revealTimestamp = commitTimestamp + expiryMs + 100;
       const reveal = createReveal(
         keypair.publicKey,
         keypair.privateKey,
         commit.id,
         prediction,
-        'rain observed'
+        'rain observed',
+        revealTimestamp
       );
       
       const result = verifyReveal(commit, reveal);
@@ -131,28 +137,31 @@ describe('Commit-Reveal', () => {
       assert.strictEqual(result.reason, undefined);
     });
 
-    it('should reject reveal with wrong prediction', async () => {
+    it('should reject reveal with wrong prediction', () => {
       const keypair = generateKeyPair();
       const prediction = 'It will rain tomorrow';
       const wrongPrediction = 'It will be sunny tomorrow';
       const expiryMs = 1000;
       
+      const commitTimestamp = 1000000000;
       const commit = createCommit(
         keypair.publicKey,
         keypair.privateKey,
         'weather_forecast',
         prediction,
+        commitTimestamp,
         expiryMs
       );
       
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      
+      // Reveal after expiry
+      const revealTimestamp = commitTimestamp + expiryMs + 100;
       const reveal = createReveal(
         keypair.publicKey,
         keypair.privateKey,
         commit.id,
         wrongPrediction,
-        'rain observed'
+        'rain observed',
+        revealTimestamp
       );
       
       const result = verifyReveal(commit, reveal);
@@ -165,11 +174,13 @@ describe('Commit-Reveal', () => {
       const prediction = 'It will rain tomorrow';
       const expiryMs = 86400000; // 24 hours
       
+      const commitTimestamp = 1000000000;
       const commit = createCommit(
         keypair.publicKey,
         keypair.privateKey,
         'weather_forecast',
         prediction,
+        commitTimestamp,
         expiryMs
       );
       
@@ -178,7 +189,8 @@ describe('Commit-Reveal', () => {
         keypair.privateKey,
         commit.id,
         prediction,
-        'rain observed'
+        'rain observed',
+        commitTimestamp + 1000 // Before expiry
       );
       
       const result = verifyReveal(commit, reveal);
@@ -186,27 +198,30 @@ describe('Commit-Reveal', () => {
       assert.ok(result.reason?.includes('expiry'));
     });
 
-    it('should reject reveal with wrong commitment ID', async () => {
+    it('should reject reveal with wrong commitment ID', () => {
       const keypair = generateKeyPair();
       const prediction = 'It will rain tomorrow';
       const expiryMs = 1000;
       
+      const commitTimestamp = 1000000000;
       const commit = createCommit(
         keypair.publicKey,
         keypair.privateKey,
         'weather_forecast',
         prediction,
+        commitTimestamp,
         expiryMs
       );
       
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      
+      // Reveal after expiry
+      const revealTimestamp = commitTimestamp + expiryMs + 100;
       const reveal = createReveal(
         keypair.publicKey,
         keypair.privateKey,
         'wrong-commit-id',
         prediction,
-        'rain observed'
+        'rain observed',
+        revealTimestamp
       );
       
       const result = verifyReveal(commit, reveal);
@@ -214,28 +229,31 @@ describe('Commit-Reveal', () => {
       assert.ok(result.reason?.includes('reference'));
     });
 
-    it('should reject reveal from different agent', async () => {
+    it('should reject reveal from different agent', () => {
       const keypair1 = generateKeyPair();
       const keypair2 = generateKeyPair();
       const prediction = 'It will rain tomorrow';
       const expiryMs = 1000;
       
+      const commitTimestamp = 1000000000;
       const commit = createCommit(
         keypair1.publicKey,
         keypair1.privateKey,
         'weather_forecast',
         prediction,
+        commitTimestamp,
         expiryMs
       );
       
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      
+      // Reveal after expiry
+      const revealTimestamp = commitTimestamp + expiryMs + 100;
       const reveal = createReveal(
         keypair2.publicKey,
         keypair2.privateKey,
         commit.id,
         prediction,
-        'rain observed'
+        'rain observed',
+        revealTimestamp
       );
       
       const result = verifyReveal(commit, reveal);

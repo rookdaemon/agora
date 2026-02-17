@@ -35,7 +35,8 @@ describe('ReputationStore', () => {
         'target123',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        1000000000
       );
       
       await store.addVerification(verification);
@@ -56,7 +57,8 @@ describe('ReputationStore', () => {
         'target123',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        1000000000
       );
       
       await store1.addVerification(verification);
@@ -74,13 +76,15 @@ describe('ReputationStore', () => {
       const store = new ReputationStore(storePath);
       
       const verifier = generateKeyPair();
+      const timestamp = 1000000000;
       const v1 = createVerification(
         verifier.publicKey,
         verifier.privateKey,
         'target1',
         'ocr',
         'correct',
-        0.9
+        0.9,
+        timestamp
       );
       
       const v2 = createVerification(
@@ -89,7 +93,8 @@ describe('ReputationStore', () => {
         'target2',
         'summarization',
         'correct',
-        0.95
+        0.95,
+        timestamp
       );
       
       await store.addVerification(v1);
@@ -106,11 +111,13 @@ describe('ReputationStore', () => {
       const store = new ReputationStore(storePath);
       
       const agent = generateKeyPair();
+      const timestamp = 1000000000;
       const commit = createCommit(
         agent.publicKey,
         agent.privateKey,
         'weather_forecast',
         'It will rain tomorrow',
+        timestamp,
         86400000
       );
       
@@ -126,11 +133,13 @@ describe('ReputationStore', () => {
       const store = new ReputationStore(storePath);
       
       const agent = generateKeyPair();
+      const timestamp = 1000000000;
       const commit = createCommit(
         agent.publicKey,
         agent.privateKey,
         'weather_forecast',
         'It will rain tomorrow',
+        timestamp,
         86400000
       );
       
@@ -184,7 +193,8 @@ describe('ReputationStore', () => {
         agent.privateKey,
         'commit123',
         'It will rain tomorrow',
-        'rain observed'
+        'rain observed',
+        1000000000
       );
       
       await store.addReveal(reveal);
@@ -205,7 +215,8 @@ describe('ReputationStore', () => {
         agent.privateKey,
         commitId,
         'It will rain tomorrow',
-        'rain observed'
+        'rain observed',
+        1000000000
       );
       
       await store.addReveal(reveal);
@@ -222,13 +233,15 @@ describe('ReputationStore', () => {
       const store = new ReputationStore(storePath);
       
       const verifier = generateKeyPair();
+      const timestamp = 1000000000;
       const v1 = createVerification(
         verifier.publicKey,
         verifier.privateKey,
         'target1',
         'ocr',
         'correct',
-        0.9
+        0.9,
+        timestamp
       );
       
       const v2 = createVerification(
@@ -237,7 +250,8 @@ describe('ReputationStore', () => {
         'target2',
         'ocr',
         'correct',
-        0.95
+        0.95,
+        timestamp
       );
       
       await store.addVerification(v1);
@@ -255,13 +269,15 @@ describe('ReputationStore', () => {
       const store = new ReputationStore(storePath);
       
       const verifier = generateKeyPair();
+      const timestamp = 1000000000;
       const v1 = createVerification(
         verifier.publicKey,
         verifier.privateKey,
         'target1',
         'ocr',
         'correct',
-        0.9
+        0.9,
+        timestamp
       );
       
       const v2 = createVerification(
@@ -270,7 +286,8 @@ describe('ReputationStore', () => {
         'target2',
         'summarization',
         'correct',
-        0.95
+        0.95,
+        timestamp
       );
       
       await store.addVerification(v1);
@@ -288,6 +305,7 @@ describe('ReputationStore', () => {
       const store = new ReputationStore(storePath);
       
       const agent = generateKeyPair();
+      const timestamp = 1000000000;
       
       const verification = createVerification(
         agent.publicKey,
@@ -295,7 +313,8 @@ describe('ReputationStore', () => {
         'target1',
         'ocr',
         'correct',
-        0.9
+        0.9,
+        timestamp
       );
       
       const commit = createCommit(
@@ -303,6 +322,7 @@ describe('ReputationStore', () => {
         agent.privateKey,
         'weather_forecast',
         'Prediction',
+        timestamp,
         86400000
       );
       
@@ -311,7 +331,8 @@ describe('ReputationStore', () => {
         agent.privateKey,
         'commit123',
         'Prediction',
-        'Outcome'
+        'Outcome',
+        timestamp
       );
       
       await store.addVerification(verification);

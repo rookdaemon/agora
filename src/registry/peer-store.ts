@@ -87,11 +87,11 @@ export class PeerStore {
    * Remove peers that haven't been seen within the specified time window.
    * 
    * @param maxAgeMs - Maximum age in milliseconds. Peers older than this will be removed.
+   * @param currentTime - Current timestamp (ms), defaults to Date.now()
    * @returns Number of peers removed
    */
-  prune(maxAgeMs: number): number {
-    const now = Date.now();
-    const cutoff = now - maxAgeMs;
+  prune(maxAgeMs: number, currentTime: number = Date.now()): number {
+    const cutoff = currentTime - maxAgeMs;
     let removed = 0;
     
     for (const [publicKey, peer] of this.peers.entries()) {
