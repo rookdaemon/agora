@@ -17,3 +17,8 @@ export * from './utils.js';
 export * from './service.js';
 export * from './discovery/peer-discovery.js';
 export * from './discovery/bootstrap.js';
+export * from './reputation/types.js';
+export * from './reputation/verification.js';
+export * from './reputation/commit-reveal.js';
+export * from './reputation/scoring.js';
+export * from './reputation/store.js';
