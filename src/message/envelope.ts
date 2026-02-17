@@ -21,7 +21,13 @@ export type MessageType =
   | 'peer_referral'           // Agent recommends another agent
   | 'capability_announce'     // Agent publishes capabilities to network
   | 'capability_query'        // Agent queries for capabilities
-  | 'capability_response';    // Response with matching peers
+  | 'capability_response'     // Response with matching peers
+  | 'commit'                  // Agent commits to a prediction (commit-reveal pattern)
+  | 'reveal'                  // Agent reveals prediction and outcome
+  | 'verification'            // Agent verifies another agent's output
+  | 'revocation'              // Agent revokes a prior verification
+  | 'reputation_query'        // Agent queries for reputation data
+  | 'reputation_response';    // Response to reputation query
 
 /**
  * The signed envelope that wraps every message on the network.
