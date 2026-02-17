@@ -22,12 +22,11 @@ export type MessageType =
   | 'capability_announce'     // Agent publishes capabilities to network
   | 'capability_query'        // Agent queries for capabilities
   | 'capability_response'     // Response with matching peers
-  // Reputation message types (RFC-001):
-  | 'commit'                  // Commit to prediction (commit-reveal pattern)
-  | 'reveal'                  // Reveal prediction and outcome
-  | 'verification'            // Verify another agent's output
-  | 'revocation'              // Revoke a prior verification
-  | 'reputation_query'        // Query network for reputation data
+  | 'commit'                  // Agent commits to a prediction (commit-reveal pattern)
+  | 'reveal'                  // Agent reveals prediction and outcome
+  | 'verification'            // Agent verifies another agent's output
+  | 'revocation'              // Agent revokes a prior verification
+  | 'reputation_query'        // Agent queries for reputation data
   | 'reputation_response';    // Response to reputation query
 
 /**

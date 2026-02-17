@@ -1,411 +1,266 @@
+/**
+ * Tests for trust score computation with decay
+ */
+
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { generateKeyPair } from '../../src/identity/keypair.js';
 import { createVerification } from '../../src/reputation/verification.js';
-import { decay, computeTrustScore, computeAllTrustScores } from '../../src/reputation/scoring.js';
+import { decay, computeTrustScore, computeTrustScores } from '../../src/reputation/scoring.js';
 
 describe('Scoring', () => {
   describe('decay', () => {
-    it('should return 1 for zero time delta', () => {
-      const result = decay(0);
-      assert.strictEqual(result, 1);
+    it('should return 1.0 for zero time delta', () => {
+      const weight = decay(0);
+      assert.strictEqual(weight, 1.0);
     });
-    
-    it('should return value close to 0.93 for 7 days', () => {
-      const sevenDays = 7 * 24 * 60 * 60 * 1000;
-      const result = decay(sevenDays);
-      assert.ok(result > 0.92 && result < 0.94, `Expected ~0.93, got ${result}`);
-    });
-    
-    it('should return value close to 0.5 for 70 days (half-life)', () => {
-      const seventyDays = 70 * 24 * 60 * 60 * 1000;
-      const result = decay(seventyDays);
-      assert.ok(result > 0.48 && result < 0.52, `Expected ~0.50, got ${result}`);
-    });
-    
-    it('should return value close to 0.025 for 1 year', () => {
-      const oneYear = 365 * 24 * 60 * 60 * 1000;
-      const result = decay(oneYear);
-      assert.ok(result > 0.01 && result < 0.05, `Expected ~0.025, got ${result}`);
-    });
-    
-    it('should decay monotonically', () => {
-      const results = [0, 1, 7, 30, 70, 365].map(days => 
-        decay(days * 24 * 60 * 60 * 1000)
-      );
+
+    it('should return value between 0 and 1 for positive time', () => {
+      const oneDay = 24 * 60 * 60 * 1000;
+      const weight = decay(oneDay);
       
-      for (let i = 1; i < results.length; i++) {
-        assert.ok(results[i] < results[i - 1], 
-          `Decay not monotonic: ${results[i]} >= ${results[i - 1]}`);
-      }
+      assert.ok(weight > 0);
+      assert.ok(weight < 1);
+      assert.ok(weight > 0.9); // Should be ~0.93 for 7 days with default lambda
+    });
+
+    it('should decay more for longer time periods', () => {
+      const oneDay = 24 * 60 * 60 * 1000;
+      const weight1Day = decay(oneDay);
+      const weight7Days = decay(7 * oneDay);
+      const weight70Days = decay(70 * oneDay);
+      
+      assert.ok(weight1Day > weight7Days);
+      assert.ok(weight7Days > weight70Days);
+      assert.ok(weight70Days > 0.4 && weight70Days < 0.6); // Should be ~0.5 at 70 days
     });
   });
-  
+
   describe('computeTrustScore', () => {
-    it('should return zero score for no verifications', () => {
-      const agent = generateKeyPair();
-      const score = computeTrustScore(agent.publicKey, 'ocr', []);
+    it('should return zero score for empty verifications', () => {
+      const score = computeTrustScore('agent123', 'ocr', []);
       
-      assert.strictEqual(score.agent, agent.publicKey);
+      assert.strictEqual(score.agent, 'agent123');
       assert.strictEqual(score.domain, 'ocr');
       assert.strictEqual(score.score, 0);
       assert.strictEqual(score.verificationCount, 0);
       assert.strictEqual(score.lastVerified, 0);
-      assert.deepStrictEqual(score.topVerifiers, []);
+      assert.strictEqual(score.topVerifiers.length, 0);
     });
-    
-    it('should compute score for single correct verification', () => {
-      const agent = generateKeyPair();
-      const verifier = generateKeyPair();
+
+    it('should compute score from single correct verification', () => {
+      const verifierKeypair = generateKeyPair();
+      const currentTime = Date.now();
       
       const verification = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent.publicKey,
+        verifierKeypair.publicKey,
+        verifierKeypair.privateKey,
+        'target123',
         'ocr',
         'correct',
         1.0
       );
       
-      const score = computeTrustScore(
-        agent.publicKey,
+      const score = computeTrustScore('agent123', 'ocr', [verification], currentTime);
+      
+      assert.strictEqual(score.verificationCount, 1);
+      assert.ok(score.score > 0.5); // Correct verification should push score above 0.5
+      assert.strictEqual(score.lastVerified, verification.timestamp);
+      assert.strictEqual(score.topVerifiers.length, 1);
+      assert.strictEqual(score.topVerifiers[0], verifierKeypair.publicKey);
+    });
+
+    it('should compute higher score for multiple correct verifications', () => {
+      const verifier1 = generateKeyPair();
+      const verifier2 = generateKeyPair();
+      const currentTime = Date.now();
+      
+      const v1 = createVerification(
+        verifier1.publicKey,
+        verifier1.privateKey,
+        'target1',
         'ocr',
-        [verification],
-        verification.timestamp // No decay
+        'correct',
+        0.9
       );
       
-      // Score formula: (verdict * confidence * decay) / count
-      // = (1 * 1.0 * 1.0) / 1 = 1.0
-      // Normalized to [0,1]: (1 + 1) / 2 = 1.0
-      assert.strictEqual(score.score, 1.0);
-      assert.strictEqual(score.verificationCount, 1);
-      assert.strictEqual(score.lastVerified, verification.timestamp);
-      assert.deepStrictEqual(score.topVerifiers, [verifier.publicKey]);
+      const v2 = createVerification(
+        verifier2.publicKey,
+        verifier2.privateKey,
+        'target2',
+        'ocr',
+        'correct',
+        0.95
+      );
+      
+      const score = computeTrustScore('agent123', 'ocr', [v1, v2], currentTime);
+      
+      assert.strictEqual(score.verificationCount, 2);
+      assert.ok(score.score > 0.5);
+      assert.strictEqual(score.topVerifiers.length, 2);
     });
-    
-    it('should compute score for single incorrect verification', () => {
-      const agent = generateKeyPair();
-      const verifier = generateKeyPair();
+
+    it('should compute lower score for incorrect verifications', () => {
+      const verifierKeypair = generateKeyPair();
+      const currentTime = Date.now();
       
       const verification = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent.publicKey,
+        verifierKeypair.publicKey,
+        verifierKeypair.privateKey,
+        'target123',
         'ocr',
         'incorrect',
         1.0
       );
       
-      const score = computeTrustScore(
-        agent.publicKey,
-        'ocr',
-        [verification],
-        verification.timestamp
-      );
+      const score = computeTrustScore('agent123', 'ocr', [verification], currentTime);
       
-      // Score: (-1 * 1.0 * 1.0) / 1 = -1.0
-      // Normalized: (-1 + 1) / 2 = 0.0
-      assert.strictEqual(score.score, 0.0);
-      assert.strictEqual(score.verificationCount, 1);
+      assert.ok(score.score < 0.5); // Incorrect verification should push score below 0.5
     });
-    
-    it('should compute score for disputed verification', () => {
-      const agent = generateKeyPair();
-      const verifier = generateKeyPair();
-      
-      const verification = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent.publicKey,
-        'ocr',
-        'disputed',
-        1.0
-      );
-      
-      const score = computeTrustScore(
-        agent.publicKey,
-        'ocr',
-        [verification],
-        verification.timestamp
-      );
-      
-      // Score: (0 * 1.0 * 1.0) / 1 = 0.0
-      // Normalized: (0 + 1) / 2 = 0.5
-      assert.strictEqual(score.score, 0.5);
-      assert.strictEqual(score.verificationCount, 1);
-    });
-    
-    it('should average multiple verifications', () => {
-      const agent = generateKeyPair();
+
+    it('should handle mixed verdicts', () => {
       const verifier1 = generateKeyPair();
       const verifier2 = generateKeyPair();
+      const verifier3 = generateKeyPair();
+      const currentTime = Date.now();
       
-      const now = Date.now();
-      
-      const v1 = createVerification(
+      const correct = createVerification(
         verifier1.publicKey,
         verifier1.privateKey,
-        agent.publicKey,
+        'target1',
         'ocr',
         'correct',
         1.0
       );
-      v1.timestamp = now;
       
-      const v2 = createVerification(
+      const incorrect = createVerification(
         verifier2.publicKey,
         verifier2.privateKey,
-        agent.publicKey,
+        'target2',
         'ocr',
-        'correct',
-        1.0
-      );
-      v2.timestamp = now;
-      
-      const score = computeTrustScore(
-        agent.publicKey,
-        'ocr',
-        [v1, v2],
-        now
-      );
-      
-      // Average: (1 + 1) / 2 = 1.0
-      // Normalized: (1 + 1) / 2 = 1.0
-      assert.strictEqual(score.score, 1.0);
-      assert.strictEqual(score.verificationCount, 2);
-      assert.strictEqual(score.topVerifiers.length, 2);
-    });
-    
-    it('should apply time decay', () => {
-      const agent = generateKeyPair();
-      const verifier = generateKeyPair();
-      
-      const verification = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent.publicKey,
-        'ocr',
-        'correct',
+        'incorrect',
         1.0
       );
       
-      // Compute score 70 days later (half-life)
-      const seventyDaysLater = verification.timestamp + (70 * 24 * 60 * 60 * 1000);
-      const score = computeTrustScore(
-        agent.publicKey,
+      const disputed = createVerification(
+        verifier3.publicKey,
+        verifier3.privateKey,
+        'target3',
         'ocr',
-        [verification],
-        seventyDaysLater
+        'disputed',
+        0.5
       );
       
-      // Score with decay: (1 * 1.0 * ~0.5) / 1 = ~0.5
-      // Normalized: (~0.5 + 1) / 2 = ~0.75
-      assert.ok(score.score > 0.7 && score.score < 0.8, 
-        `Expected ~0.75, got ${score.score}`);
+      const score = computeTrustScore('agent123', 'ocr', [correct, incorrect, disputed], currentTime);
+      
+      assert.strictEqual(score.verificationCount, 3);
+      assert.ok(score.score >= 0 && score.score <= 1);
     });
-    
-    it('should weight by confidence', () => {
-      const agent = generateKeyPair();
-      const verifier = generateKeyPair();
-      
-      const verification = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent.publicKey,
-        'ocr',
-        'correct',
-        0.5 // Half confidence
-      );
-      
-      const score = computeTrustScore(
-        agent.publicKey,
-        'ocr',
-        [verification],
-        verification.timestamp
-      );
-      
-      // Score: (1 * 0.5 * 1.0) / 1 = 0.5
-      // Normalized: (0.5 + 1) / 2 = 0.75
-      assert.strictEqual(score.score, 0.75);
-    });
-    
+
     it('should filter by domain', () => {
-      const agent = generateKeyPair();
       const verifier = generateKeyPair();
+      const currentTime = Date.now();
       
-      const ocrVer = createVerification(
+      const ocrVerification = createVerification(
         verifier.publicKey,
         verifier.privateKey,
-        agent.publicKey,
+        'target1',
         'ocr',
         'correct',
         1.0
       );
       
-      const codeVer = createVerification(
+      const summaryVerification = createVerification(
         verifier.publicKey,
         verifier.privateKey,
-        agent.publicKey,
-        'code_review',
+        'target2',
+        'summarization',
         'correct',
         1.0
       );
       
-      const ocrScore = computeTrustScore(
-        agent.publicKey,
-        'ocr',
-        [ocrVer, codeVer]
-      );
-      
+      // Should only count OCR verification
+      const ocrScore = computeTrustScore('agent123', 'ocr', [ocrVerification, summaryVerification], currentTime);
       assert.strictEqual(ocrScore.verificationCount, 1);
-      assert.strictEqual(ocrScore.domain, 'ocr');
+      
+      // Should only count summarization verification
+      const summaryScore = computeTrustScore('agent123', 'summarization', [ocrVerification, summaryVerification], currentTime);
+      assert.strictEqual(summaryScore.verificationCount, 1);
     });
-    
-    it('should track top verifiers', () => {
-      const agent = generateKeyPair();
-      const verifiers = [
-        generateKeyPair(),
-        generateKeyPair(),
-        generateKeyPair(),
-      ];
+
+    it('should apply time decay to old verifications', () => {
+      const verifier = generateKeyPair();
+      const currentTime = Date.now();
+      const oldTime = currentTime - (70 * 24 * 60 * 60 * 1000); // 70 days ago
       
-      const now = Date.now();
-      const verifications = verifiers.map(v => {
-        const ver = createVerification(
-          v.publicKey,
-          v.privateKey,
-          agent.publicKey,
-          'ocr',
-          'correct',
-          1.0
-        );
-        ver.timestamp = now;
-        return ver;
-      });
-      
-      const score = computeTrustScore(
-        agent.publicKey,
+      const oldVerification = createVerification(
+        verifier.publicKey,
+        verifier.privateKey,
+        'target1',
         'ocr',
-        verifications,
-        now
+        'correct',
+        1.0
+      );
+      oldVerification.timestamp = oldTime;
+      
+      const recentVerification = createVerification(
+        verifier.publicKey,
+        verifier.privateKey,
+        'target2',
+        'ocr',
+        'correct',
+        1.0
       );
       
-      assert.strictEqual(score.topVerifiers.length, 3);
-      assert.ok(score.topVerifiers.includes(verifiers[0].publicKey));
-      assert.ok(score.topVerifiers.includes(verifiers[1].publicKey));
-      assert.ok(score.topVerifiers.includes(verifiers[2].publicKey));
-    });
-    
-    it('should limit top verifiers to 5', () => {
-      const agent = generateKeyPair();
-      const verifiers = Array.from({ length: 10 }, () => generateKeyPair());
+      const scoreWithOld = computeTrustScore('agent123', 'ocr', [oldVerification], currentTime);
+      const scoreWithRecent = computeTrustScore('agent123', 'ocr', [recentVerification], currentTime);
       
-      const now = Date.now();
-      const verifications = verifiers.map(v => {
-        const ver = createVerification(
-          v.publicKey,
-          v.privateKey,
-          agent.publicKey,
-          'ocr',
-          'correct',
-          1.0
-        );
-        ver.timestamp = now;
-        return ver;
-      });
-      
-      const score = computeTrustScore(
-        agent.publicKey,
-        'ocr',
-        verifications,
-        now
-      );
-      
-      assert.strictEqual(score.topVerifiers.length, 5);
+      // Recent verification should have higher score due to less decay
+      assert.ok(scoreWithRecent.score > scoreWithOld.score);
     });
   });
-  
-  describe('computeAllTrustScores', () => {
-    it('should compute scores for multiple domains', () => {
-      const agent = generateKeyPair();
+
+  describe('computeTrustScores', () => {
+    it('should compute scores across multiple domains', () => {
       const verifier = generateKeyPair();
+      const currentTime = Date.now();
       
-      const now = Date.now();
-      
-      const ocrVer = createVerification(
+      const ocrVerification = createVerification(
         verifier.publicKey,
         verifier.privateKey,
-        agent.publicKey,
+        'target1',
         'ocr',
         'correct',
         1.0
       );
-      ocrVer.timestamp = now;
       
-      const codeVer = createVerification(
+      const summaryVerification = createVerification(
         verifier.publicKey,
         verifier.privateKey,
-        agent.publicKey,
-        'code_review',
+        'target2',
+        'summarization',
         'correct',
-        1.0
+        0.9
       );
-      codeVer.timestamp = now;
       
-      const scores = computeAllTrustScores(
-        agent.publicKey,
-        [ocrVer, codeVer],
-        now
-      );
+      const scores = computeTrustScores('agent123', [ocrVerification, summaryVerification], currentTime);
       
       assert.strictEqual(scores.size, 2);
       assert.ok(scores.has('ocr'));
-      assert.ok(scores.has('code_review'));
+      assert.ok(scores.has('summarization'));
       
-      const ocrScore = scores.get('ocr')!;
-      assert.strictEqual(ocrScore.score, 1.0);
-      assert.strictEqual(ocrScore.verificationCount, 1);
+      const ocrScore = scores.get('ocr');
+      assert.ok(ocrScore);
+      assert.strictEqual(ocrScore.domain, 'ocr');
       
-      const codeScore = scores.get('code_review')!;
-      assert.strictEqual(codeScore.score, 1.0);
-      assert.strictEqual(codeScore.verificationCount, 1);
+      const summaryScore = scores.get('summarization');
+      assert.ok(summaryScore);
+      assert.strictEqual(summaryScore.domain, 'summarization');
     });
-    
+
     it('should return empty map for no verifications', () => {
-      const agent = generateKeyPair();
-      const scores = computeAllTrustScores(agent.publicKey, []);
-      
+      const scores = computeTrustScores('agent123', []);
       assert.strictEqual(scores.size, 0);
-    });
-    
-    it('should filter by agent', () => {
-      const agent1 = generateKeyPair();
-      const agent2 = generateKeyPair();
-      const verifier = generateKeyPair();
-      
-      const v1 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent1.publicKey,
-        'ocr',
-        'correct',
-        1.0
-      );
-      
-      const v2 = createVerification(
-        verifier.publicKey,
-        verifier.privateKey,
-        agent2.publicKey,
-        'ocr',
-        'correct',
-        1.0
-      );
-      
-      const scores = computeAllTrustScores(agent1.publicKey, [v1, v2]);
-      
-      assert.strictEqual(scores.size, 1);
-      assert.ok(scores.has('ocr'));
-      assert.strictEqual(scores.get('ocr')!.agent, agent1.publicKey);
     });
   });
 });

@@ -1,6 +1,6 @@
 /**
- * Core reputation data structures for Agora's trust and verification layer.
- * Implements Phase 1 of RFC-001.
+ * Core data structures for the Agora reputation layer.
+ * Phase 1: Verification records, commit-reveal patterns, and trust scoring.
  */
 
 /**
@@ -170,4 +170,157 @@ export interface RevocationRecord {
   
   /** Ed25519 signature */
   signature: string;
+}
+
+/**
+ * Validation result structure
+ */
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/**
+ * Validate a verification record structure
+ */
+export function validateVerificationRecord(record: unknown): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof record !== 'object' || record === null) {
+    return { valid: false, errors: ['Record must be an object'] };
+  }
+  
+  const r = record as Record<string, unknown>;
+  
+  if (typeof r.id !== 'string' || r.id.length === 0) {
+    errors.push('id must be a non-empty string');
+  }
+  
+  if (typeof r.verifier !== 'string' || r.verifier.length === 0) {
+    errors.push('verifier must be a non-empty string');
+  }
+  
+  if (typeof r.target !== 'string' || r.target.length === 0) {
+    errors.push('target must be a non-empty string');
+  }
+  
+  if (typeof r.domain !== 'string' || r.domain.length === 0) {
+    errors.push('domain must be a non-empty string');
+  }
+  
+  if (!['correct', 'incorrect', 'disputed'].includes(r.verdict as string)) {
+    errors.push('verdict must be one of: correct, incorrect, disputed');
+  }
+  
+  if (typeof r.confidence !== 'number' || r.confidence < 0 || r.confidence > 1) {
+    errors.push('confidence must be a number between 0 and 1');
+  }
+  
+  if (r.evidence !== undefined && typeof r.evidence !== 'string') {
+    errors.push('evidence must be a string if provided');
+  }
+  
+  if (typeof r.timestamp !== 'number' || r.timestamp <= 0) {
+    errors.push('timestamp must be a positive number');
+  }
+  
+  if (typeof r.signature !== 'string' || r.signature.length === 0) {
+    errors.push('signature must be a non-empty string');
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate a commit record structure
+ */
+export function validateCommitRecord(record: unknown): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof record !== 'object' || record === null) {
+    return { valid: false, errors: ['Record must be an object'] };
+  }
+  
+  const r = record as Record<string, unknown>;
+  
+  if (typeof r.id !== 'string' || r.id.length === 0) {
+    errors.push('id must be a non-empty string');
+  }
+  
+  if (typeof r.agent !== 'string' || r.agent.length === 0) {
+    errors.push('agent must be a non-empty string');
+  }
+  
+  if (typeof r.domain !== 'string' || r.domain.length === 0) {
+    errors.push('domain must be a non-empty string');
+  }
+  
+  if (typeof r.commitment !== 'string' || r.commitment.length !== 64) {
+    errors.push('commitment must be a 64-character hex string (SHA-256 hash)');
+  }
+  
+  if (typeof r.timestamp !== 'number' || r.timestamp <= 0) {
+    errors.push('timestamp must be a positive number');
+  }
+  
+  if (typeof r.expiry !== 'number' || r.expiry <= 0) {
+    errors.push('expiry must be a positive number');
+  }
+  
+  if (typeof r.expiry === 'number' && typeof r.timestamp === 'number' && r.expiry <= r.timestamp) {
+    errors.push('expiry must be after timestamp');
+  }
+  
+  if (typeof r.signature !== 'string' || r.signature.length === 0) {
+    errors.push('signature must be a non-empty string');
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate a reveal record structure
+ */
+export function validateRevealRecord(record: unknown): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof record !== 'object' || record === null) {
+    return { valid: false, errors: ['Record must be an object'] };
+  }
+  
+  const r = record as Record<string, unknown>;
+  
+  if (typeof r.id !== 'string' || r.id.length === 0) {
+    errors.push('id must be a non-empty string');
+  }
+  
+  if (typeof r.agent !== 'string' || r.agent.length === 0) {
+    errors.push('agent must be a non-empty string');
+  }
+  
+  if (typeof r.commitmentId !== 'string' || r.commitmentId.length === 0) {
+    errors.push('commitmentId must be a non-empty string');
+  }
+  
+  if (typeof r.prediction !== 'string' || r.prediction.length === 0) {
+    errors.push('prediction must be a non-empty string');
+  }
+  
+  if (typeof r.outcome !== 'string' || r.outcome.length === 0) {
+    errors.push('outcome must be a non-empty string');
+  }
+  
+  if (r.evidence !== undefined && typeof r.evidence !== 'string') {
+    errors.push('evidence must be a string if provided');
+  }
+  
+  if (typeof r.timestamp !== 'number' || r.timestamp <= 0) {
+    errors.push('timestamp must be a positive number');
+  }
+  
+  if (typeof r.signature !== 'string' || r.signature.length === 0) {
+    errors.push('signature must be a non-empty string');
+  }
+  
+  return { valid: errors.length === 0, errors };
 }
