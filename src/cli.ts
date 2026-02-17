@@ -16,8 +16,8 @@ import { PeerDiscoveryService } from './discovery/peer-discovery.js';
 import { getDefaultBootstrapRelay } from './discovery/bootstrap.js';
 import { resolveBroadcastName } from './utils.js';
 import { ReputationStore } from './reputation/store.js';
-import { createCommit, createReveal, verifyRevealMatchesCommit } from './reputation/commit-reveal.js';
-import { createVerification, validateVerification } from './reputation/verification.js';
+import { createCommit, createReveal, validateRevealMatchesCommit } from './reputation/commit-reveal.js';
+import { createVerification } from './reputation/verification.js';
 import { computeTrustScore } from './reputation/scoring.js';
 
 interface CliOptions {
@@ -1022,125 +1022,132 @@ async function handleRelay(options: CliOptions & { port?: string }): Promise<voi
 }
 
 /**
+ * Get default reputation store path.
+ */
+function getReputationStorePath(): string {
+  return resolve(homedir(), '.local', 'share', 'agora', 'reputation.jsonl');
+}
+
+/**
  * Handle the `agora reputation commit` command.
  */
-function handleReputationCommit(args: string[], options: CliOptions & { domain?: string; expiry?: string }): void {
-  if (args.length < 1) {
-    console.error('Error: Missing prediction. Usage: agora reputation commit <prediction> --domain <domain> --expiry <ms>');
-    process.exit(1);
-  }
-
-  const prediction = args.join(' ');
-  const domain = options.domain;
-  const expiryMs = options.expiry ? parseInt(options.expiry, 10) : 24 * 60 * 60 * 1000; // Default 24h
-
-  if (!domain) {
-    console.error('Error: Missing --domain option');
-    process.exit(1);
-  }
-
-  if (isNaN(expiryMs) || expiryMs <= 0) {
-    console.error('Error: --expiry must be a positive number (milliseconds)');
-    process.exit(1);
-  }
-
+async function handleReputationCommit(args: string[], options: CliOptions): Promise<void> {
   const configPath = getConfigPath(options);
   if (!existsSync(configPath)) {
     console.error('Error: Config file not found. Run `agora init` first.');
     process.exit(1);
   }
 
-  const config = loadPeerConfig(configPath);
-  const store = new ReputationStore();
+  const parsed = parseArgs({
+    args,
+    options: {
+      domain: { type: 'string' },
+      prediction: { type: 'string' },
+      expiry: { type: 'string' },
+    },
+    allowPositionals: false,
+  });
 
+  if (!parsed.values.domain || !parsed.values.prediction || !parsed.values.expiry) {
+    console.error('Usage: agora reputation commit --domain <domain> --prediction <text> --expiry <milliseconds>');
+    process.exit(1);
+  }
+
+  const expiryMs = parseInt(parsed.values.expiry, 10);
+  if (isNaN(expiryMs) || expiryMs <= 0) {
+    console.error('Error: expiry must be a positive number (milliseconds)');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
   const commit = createCommit(
     config.identity.publicKey,
     config.identity.privateKey,
-    domain,
-    prediction,
-    expiryMs,
+    parsed.values.domain,
+    parsed.values.prediction,
+    expiryMs
   );
 
-  store.appendCommit(commit);
+  // Store locally
+  const store = new ReputationStore(getReputationStorePath());
+  await store.append({ type: 'commit', ...commit });
 
   output({
     status: 'committed',
-    commitId: commit.id,
+    id: commit.id,
     domain: commit.domain,
-    expiry: new Date(commit.expiry).toISOString(),
+    commitment: commit.commitment,
+    expiry: commit.expiry,
+    expiryDate: new Date(commit.expiry).toISOString(),
   }, options.pretty || false);
 }
 
 /**
  * Handle the `agora reputation reveal` command.
  */
-function handleReputationReveal(args: string[], options: CliOptions & { 'commit-id'?: string; outcome?: string; evidence?: string; prediction?: string }): void {
-  const commitId = options['commit-id'];
-  const prediction = options.prediction;
-  const outcome = options.outcome;
-  const evidence = options.evidence;
-
-  if (!commitId) {
-    console.error('Error: Missing --commit-id option');
-    process.exit(1);
-  }
-
-  if (!prediction) {
-    console.error('Error: Missing --prediction option');
-    process.exit(1);
-  }
-
-  if (!outcome) {
-    console.error('Error: Missing --outcome option');
-    process.exit(1);
-  }
-
+async function handleReputationReveal(args: string[], options: CliOptions): Promise<void> {
   const configPath = getConfigPath(options);
   if (!existsSync(configPath)) {
     console.error('Error: Config file not found. Run `agora init` first.');
     process.exit(1);
   }
 
-  const config = loadPeerConfig(configPath);
-  const store = new ReputationStore();
+  const parsed = parseArgs({
+    args,
+    options: {
+      commit: { type: 'string' },
+      prediction: { type: 'string' },
+      outcome: { type: 'string' },
+      evidence: { type: 'string' },
+    },
+    allowPositionals: false,
+  });
 
-  // Verify commit exists
-  const commit = store.getCommitById(commitId);
-  if (!commit) {
-    console.error(`Error: Commit '${commitId}' not found`);
+  if (!parsed.values.commit || !parsed.values.prediction || !parsed.values.outcome) {
+    console.error('Usage: agora reputation reveal --commit <commit-id> --prediction <text> --outcome <text> [--evidence <url>]');
     process.exit(1);
   }
 
-  // Check if already revealed
-  const existingReveal = store.getRevealForCommit(commitId);
-  if (existingReveal) {
-    console.error(`Error: Commit '${commitId}' already revealed`);
+  // Verify commit exists
+  const store = new ReputationStore(getReputationStorePath());
+  const commit = await store.getCommit(parsed.values.commit);
+  if (!commit) {
+    console.error(`Error: Commit ${parsed.values.commit} not found`);
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+  
+  // Verify commit belongs to this agent
+  if (commit.agent !== config.identity.publicKey) {
+    console.error('Error: Cannot reveal commit from another agent');
     process.exit(1);
   }
 
   const reveal = createReveal(
     config.identity.publicKey,
     config.identity.privateKey,
-    commitId,
-    prediction,
-    outcome,
-    evidence,
+    parsed.values.commit,
+    parsed.values.prediction,
+    parsed.values.outcome,
+    parsed.values.evidence
   );
 
-  // Verify reveal matches commit
-  const matchResult = verifyRevealMatchesCommit(commit, reveal);
-  if (!matchResult.valid) {
-    console.error('Error: Reveal does not match commit:');
-    matchResult.errors?.forEach(err => console.error(`  - ${err}`));
+  // Validate reveal matches commit
+  const isValid = validateRevealMatchesCommit(commit, reveal);
+  if (!isValid) {
+    console.error('Error: Reveal does not match commit (check prediction hash and expiry)');
     process.exit(1);
   }
 
-  store.appendReveal(reveal);
+  // Store locally
+  await store.append({ type: 'reveal', ...reveal });
 
   output({
     status: 'revealed',
-    revealId: reveal.id,
-    commitId: reveal.commitmentId,
+    id: reveal.id,
+    commitmentId: reveal.commitmentId,
+    prediction: reveal.prediction,
     outcome: reveal.outcome,
   }, options.pretty || false);
 }
@@ -1148,70 +1155,60 @@ function handleReputationReveal(args: string[], options: CliOptions & { 'commit-
 /**
  * Handle the `agora reputation verify` command.
  */
-function handleReputationVerify(args: string[], options: CliOptions & { target?: string; domain?: string; verdict?: string; confidence?: string; evidence?: string }): void {
-  const target = options.target;
-  const domain = options.domain;
-  const verdict = options.verdict;
-  const confidenceStr = options.confidence;
-  const evidence = options.evidence;
-
-  if (!target) {
-    console.error('Error: Missing --target option (message ID to verify)');
-    process.exit(1);
-  }
-
-  if (!domain) {
-    console.error('Error: Missing --domain option');
-    process.exit(1);
-  }
-
-  if (!verdict) {
-    console.error('Error: Missing --verdict option (correct, incorrect, or disputed)');
-    process.exit(1);
-  }
-
-  if (!['correct', 'incorrect', 'disputed'].includes(verdict)) {
-    console.error('Error: --verdict must be one of: correct, incorrect, disputed');
-    process.exit(1);
-  }
-
-  const confidence = confidenceStr ? parseFloat(confidenceStr) : 1.0;
-  if (isNaN(confidence) || confidence < 0 || confidence > 1) {
-    console.error('Error: --confidence must be a number between 0 and 1');
-    process.exit(1);
-  }
-
+async function handleReputationVerify(args: string[], options: CliOptions): Promise<void> {
   const configPath = getConfigPath(options);
   if (!existsSync(configPath)) {
     console.error('Error: Config file not found. Run `agora init` first.');
     process.exit(1);
   }
 
-  const config = loadPeerConfig(configPath);
-  const store = new ReputationStore();
+  const parsed = parseArgs({
+    args,
+    options: {
+      target: { type: 'string' },
+      domain: { type: 'string' },
+      verdict: { type: 'string' },
+      confidence: { type: 'string' },
+      evidence: { type: 'string' },
+    },
+    allowPositionals: false,
+  });
 
-  const verification = createVerification(
-    config.identity.publicKey,
-    config.identity.privateKey,
-    target,
-    domain,
-    verdict as 'correct' | 'incorrect' | 'disputed',
-    confidence,
-    evidence,
-  );
-
-  const validationResult = validateVerification(verification);
-  if (!validationResult.valid) {
-    console.error('Error: Invalid verification:');
-    validationResult.errors?.forEach(err => console.error(`  - ${err}`));
+  if (!parsed.values.target || !parsed.values.domain || !parsed.values.verdict || !parsed.values.confidence) {
+    console.error('Usage: agora reputation verify --target <id> --domain <domain> --verdict <correct|incorrect|disputed> --confidence <0-1> [--evidence <hash>]');
     process.exit(1);
   }
 
-  store.appendVerification(verification);
+  const verdict = parsed.values.verdict as 'correct' | 'incorrect' | 'disputed';
+  if (!['correct', 'incorrect', 'disputed'].includes(verdict)) {
+    console.error('Error: verdict must be one of: correct, incorrect, disputed');
+    process.exit(1);
+  }
+
+  const confidence = parseFloat(parsed.values.confidence);
+  if (isNaN(confidence) || confidence < 0 || confidence > 1) {
+    console.error('Error: confidence must be a number between 0 and 1');
+    process.exit(1);
+  }
+
+  const config = loadPeerConfig(configPath);
+  const verification = createVerification(
+    config.identity.publicKey,
+    config.identity.privateKey,
+    parsed.values.target,
+    parsed.values.domain,
+    verdict,
+    confidence,
+    parsed.values.evidence
+  );
+
+  // Store locally
+  const store = new ReputationStore(getReputationStorePath());
+  await store.append({ type: 'verification', ...verification });
 
   output({
     status: 'verified',
-    verificationId: verification.id,
+    id: verification.id,
     target: verification.target,
     domain: verification.domain,
     verdict: verification.verdict,
@@ -1222,74 +1219,63 @@ function handleReputationVerify(args: string[], options: CliOptions & { target?:
 /**
  * Handle the `agora reputation query` command.
  */
-function handleReputationQuery(args: string[], options: CliOptions & { agent?: string; domain?: string }): void {
-  const agent = options.agent;
-  const domain = options.domain;
+async function handleReputationQuery(args: string[], options: CliOptions): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    options: {
+      agent: { type: 'string' },
+      domain: { type: 'string' },
+    },
+    allowPositionals: false,
+  });
 
-  if (!agent) {
-    console.error('Error: Missing --agent option (public key)');
+  if (!parsed.values.agent) {
+    console.error('Usage: agora reputation query --agent <pubkey> [--domain <domain>]');
     process.exit(1);
   }
 
-  if (!domain) {
-    console.error('Error: Missing --domain option');
-    process.exit(1);
-  }
+  const store = new ReputationStore(getReputationStorePath());
+  const verifications = await store.getActiveVerifications(
+    parsed.values.agent,
+    parsed.values.domain
+  );
 
-  const store = new ReputationStore();
-  const verifications = store.getVerifications();
-  const revocations = store.getRevocations();
+  if (parsed.values.domain) {
+    // Single domain query
+    const score = computeTrustScore(
+      parsed.values.agent,
+      parsed.values.domain,
+      verifications
+    );
 
-  const score = computeTrustScore(agent, domain, verifications, revocations, Date.now());
-
-  if (score === null) {
-    output({
-      agent,
-      domain,
-      score: null,
-      message: 'No verifications found for this agent in this domain',
-    }, options.pretty || false);
-  } else {
     output({
       agent: score.agent,
       domain: score.domain,
       score: score.score,
       verificationCount: score.verificationCount,
-      lastVerified: new Date(score.lastVerified).toISOString(),
+      lastVerified: score.lastVerified,
+      lastVerifiedDate: score.lastVerified > 0 ? new Date(score.lastVerified).toISOString() : null,
       topVerifiers: score.topVerifiers,
     }, options.pretty || false);
-  }
-}
+  } else {
+    // All domains
+    const allVerifications = await store.queryVerifications(parsed.values.agent);
+    const domains = [...new Set(allVerifications.map(v => v.domain))];
+    
+    const scores = domains.map(domain => {
+      const domainVerifications = allVerifications.filter(v => v.domain === domain);
+      return computeTrustScore(parsed.values.agent!, domain, domainVerifications);
+    });
 
-/**
- * Handle the `agora reputation list` command.
- */
-function handleReputationList(options: CliOptions & { type?: string }): void {
-  const store = new ReputationStore();
-  const type = options.type || 'all';
-
-  switch (type) {
-    case 'commits':
-      const commits = store.getCommits();
-      output({ commits, count: commits.length }, options.pretty || false);
-      break;
-    case 'reveals':
-      const reveals = store.getReveals();
-      output({ reveals, count: reveals.length }, options.pretty || false);
-      break;
-    case 'verifications':
-      const verifications = store.getVerifications();
-      output({ verifications, count: verifications.length }, options.pretty || false);
-      break;
-    case 'revocations':
-      const revocations = store.getRevocations();
-      output({ revocations, count: revocations.length }, options.pretty || false);
-      break;
-    case 'all':
-    default:
-      const all = store.readAll();
-      output({ records: all, count: all.length }, options.pretty || false);
-      break;
+    output({
+      agent: parsed.values.agent,
+      domains: scores.map(s => ({
+        domain: s.domain,
+        score: s.score,
+        verificationCount: s.verificationCount,
+        lastVerified: new Date(s.lastVerified).toISOString(),
+      })),
+    }, options.pretty || false);
   }
 }
 
@@ -1455,23 +1441,20 @@ async function main(): Promise<void> {
         break;
       case 'reputation':
         switch (subcommand) {
+          case 'verify':
+            await handleReputationVerify(remainingArgs, options);
+            break;
           case 'commit':
-            handleReputationCommit(remainingArgs, options);
+            await handleReputationCommit(remainingArgs, options);
             break;
           case 'reveal':
-            handleReputationReveal(remainingArgs, options);
-            break;
-          case 'verify':
-            handleReputationVerify(remainingArgs, options);
+            await handleReputationReveal(remainingArgs, options);
             break;
           case 'query':
-            handleReputationQuery(remainingArgs, options);
-            break;
-          case 'list':
-            handleReputationList(options);
+            await handleReputationQuery(remainingArgs, options);
             break;
           default:
-            console.error('Error: Unknown reputation subcommand. Use: commit, reveal, verify, query, list');
+            console.error('Error: Unknown reputation subcommand. Use: verify, commit, reveal, query');
             process.exit(1);
         }
         break;

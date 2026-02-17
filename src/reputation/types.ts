@@ -1,6 +1,8 @@
 /**
- * Core data structures for the Agora reputation layer.
- * Implements Phase 1 of RFC-001: verification primitives and basic trust scoring.
+ * Core data structures for the reputation and trust layer.
+ * 
+ * Provides types for verification records, commit-reveal patterns,
+ * and trust score computation.
  */
 
 /**
@@ -94,24 +96,21 @@ export interface RevealRecord {
 }
 
 /**
- * Revocation of a prior verification.
- * Allows verifiers to retract incorrect verifications.
+ * Revokes a prior verification record.
+ * Used when a verifier discovers their verification was incorrect.
  */
 export interface RevocationRecord {
   /** Content-addressed ID */
   id: string;
   
-  /** Public key of revoking agent (must match original verifier) */
+  /** Public key of agent revoking their verification */
   verifier: string;
   
-  /** ID of the verification being revoked */
+  /** ID of verification being revoked */
   verificationId: string;
   
   /** Reason for revocation */
-  reason: 'discovered_error' | 'fraud_detected' | 'methodology_flawed' | 'other';
-  
-  /** Optional evidence for revocation */
-  evidence?: string;
+  reason: string;
   
   /** Unix timestamp (ms) */
   timestamp: number;
@@ -145,40 +144,32 @@ export interface TrustScore {
 }
 
 /**
- * Query for reputation data in a specific domain.
+ * Query for reputation data about a specific agent.
  */
 export interface ReputationQuery {
-  /** Public key of agent to query */
+  /** Public key of agent being queried */
   agent: string;
   
-  /** Capability domain to query */
-  domain: string;
+  /** Optional domain filter */
+  domain?: string;
   
-  /** Optional: minimum timestamp for verifications */
-  since?: number;
+  /** Maximum age of verifications to return (ms) */
+  maxAge?: number;
 }
 
 /**
- * Response to a reputation query.
+ * Response containing reputation data for an agent.
  */
 export interface ReputationResponse {
-  /** Public key of agent being scored */
+  /** Public key of agent */
   agent: string;
   
-  /** Domain of reputation */
-  domain: string;
+  /** Domain (if filtered) */
+  domain?: string;
   
-  /** Trust score (null if no verifications exist) */
-  score: TrustScore | null;
+  /** Verification records */
+  verifications: VerificationRecord[];
   
-  /** List of recent verifications */
-  recentVerifications: VerificationRecord[];
-}
-
-/**
- * Validation result for reputation records.
- */
-export interface ValidationResult {
-  valid: boolean;
-  errors?: string[];
+  /** Computed trust score (if available) */
+  trustScore?: TrustScore;
 }
