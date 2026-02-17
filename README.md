@@ -221,21 +221,6 @@ grep '"type":"verification"' ~/.local/share/agora/reputation.jsonl | \
 ```
 
 For detailed design and future phases, see [docs/rfc-001-reputation.md](docs/rfc-001-reputation.md).
-agora diagnose rook
-
-# Run specific checks
-agora diagnose rook --checks ping,workspace,tools
-
-# Example output
-{
-  "peer": "rook",
-  "status": "healthy",
-  "checks": {
-    "ping": { "ok": true, "latency_ms": 15 }
-  },
-  "timestamp": "2026-02-05T10:50:00.000Z"
-}
-```
 
 #### Server Mode (`agora serve`)
 
