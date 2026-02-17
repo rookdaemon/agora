@@ -4,7 +4,6 @@
  * Provides append-only, crash-safe storage for reputation records.
  */
 
-import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, readFile, appendFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -59,7 +58,8 @@ export class ReputationStore {
    * @returns Array of all records
    */
   async readAll(): Promise<ReputationRecord[]> {
-    if (!existsSync(this.path)) {
+    const fs = await import('node:fs');
+    if (!fs.existsSync(this.path)) {
       return [];
     }
     
@@ -93,7 +93,8 @@ export class ReputationStore {
     return records
       .filter((r): r is { type: 'verification' } & VerificationRecord => r.type === 'verification')
       .map(r => {
-        const { type, ...verification } = r;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { type: _type, ...verification } = r;
         return verification;
       })
       .filter(v => v.target === agent || v.verifier === agent)
@@ -113,7 +114,8 @@ export class ReputationStore {
     return records
       .filter((r): r is { type: 'commit' } & CommitRecord => r.type === 'commit')
       .map(r => {
-        const { type, ...commit } = r;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { type: _type, ...commit } = r;
         return commit;
       })
       .filter(c => c.agent === agent)
@@ -132,7 +134,8 @@ export class ReputationStore {
     return records
       .filter((r): r is { type: 'reveal' } & RevealRecord => r.type === 'reveal')
       .map(r => {
-        const { type, ...reveal } = r;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { type: _type, ...reveal } = r;
         return reveal;
       })
       .filter(r => r.agent === agent);
@@ -150,7 +153,8 @@ export class ReputationStore {
     return records
       .filter((r): r is { type: 'revocation' } & RevocationRecord => r.type === 'revocation')
       .map(r => {
-        const { type, ...revocation } = r;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { type: _type, ...revocation } = r;
         return revocation;
       })
       .filter(r => r.verifier === verifier);
@@ -168,7 +172,8 @@ export class ReputationStore {
     const commit = records
       .filter((r): r is { type: 'commit' } & CommitRecord => r.type === 'commit')
       .map(r => {
-        const { type, ...commit } = r;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { type: _type, ...commit } = r;
         return commit;
       })
       .find(c => c.id === commitId);
@@ -189,7 +194,8 @@ export class ReputationStore {
       records
         .filter((r): r is { type: 'revocation' } & RevocationRecord => r.type === 'revocation')
         .map(r => {
-          const { type, ...revocation } = r;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { type: _type, ...revocation } = r;
           return revocation;
         })
     );
