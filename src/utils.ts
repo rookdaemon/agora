@@ -52,14 +52,15 @@ export function resolveBroadcastName(
  * If name exists: "name (...3f8c2247)"
  * If no name: "...3f8c2247" (short ID only)
  *
- * @param name - Optional name to display
+ * @param name - Optional name to display (should not be a short ID)
  * @param publicKey - The public key to use for short ID
  * @returns Formatted display string
  */
 export function formatDisplayName(name: string | undefined, publicKey: string): string {
   const shortId = shortKey(publicKey);
-  if (name) {
-    return `${name} (${shortId})`;
+  // If name is undefined, empty, or is already a short ID, return only short ID
+  if (!name || name.trim() === '' || name.startsWith('...')) {
+    return shortId;
   }
-  return shortId;
+  return `${name} (${shortId})`;
 }
