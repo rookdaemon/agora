@@ -67,6 +67,50 @@ Config lives at `~/.config/agora/config.json` (override with `--config` or `AGOR
 - `agora serve [--port <port>] [--name <name>]` — Start a persistent WebSocket server for incoming peer connections
 - `agora relay [--port <port>]` — Start a relay server for routing messages between agents
 
+### Reputation & Trust (RFC-001 Phase 1)
+- `agora reputation commit <prediction> --domain <domain> [--expiry <ms>]` — Commit to a prediction before outcome is known
+- `agora reputation reveal --commit-id <id> --prediction <text> --outcome <text> [--evidence <url>]` — Reveal prediction and outcome after commitment expiry
+- `agora reputation verify --target <message-id> --domain <domain> --verdict <correct|incorrect|disputed> [--confidence <0-1>] [--evidence <url>]` — Verify another agent's output or claim
+- `agora reputation query --agent <pubkey> --domain <domain>` — Query trust score for an agent in a specific domain
+- `agora reputation list [--type <commits|reveals|verifications|revocations|all>]` — List reputation records from local store
+
+**Example reputation workflow:**
+```bash
+# Agent A commits to a weather prediction
+agora reputation commit "It will rain in Stockholm on 2026-02-17" \
+  --domain weather_forecast \
+  --expiry 86400000  # 24 hours
+
+# After 24h and outcome is known, reveal
+agora reputation reveal \
+  --commit-id <commit-id-from-above> \
+  --prediction "It will rain in Stockholm on 2026-02-17" \
+  --outcome "rain observed" \
+  --evidence "https://weather.com/api/result"
+
+# Agent B verifies Agent A's prediction
+agora reputation verify \
+  --target <reveal-message-id> \
+  --domain weather_forecast \
+  --verdict correct \
+  --confidence 0.95
+
+# Query Agent A's reputation in weather forecasting
+agora reputation query \
+  --agent <agent-a-pubkey> \
+  --domain weather_forecast
+# Returns: { score: 0.95, verificationCount: 1, ... }
+```
+
+**Key features:**
+- **Commit-reveal pattern**: Prevents post-hoc prediction editing (hash commitment)
+- **Domain-specific trust**: Scores don't transfer between capabilities (ocr ≠ weather)
+- **Time decay**: Old verifications lose weight (70-day half-life)
+- **JSONL storage**: Append-only log at `~/.local/share/agora/reputation.jsonl`
+- **Cryptographic signatures**: All records are Ed25519-signed
+
+See `docs/rfc-reputation.md` for full specification.
+
 ### Diagnostics
 - `agora diagnose <peer> [--checks <comma-separated-list>]` — Run diagnostic checks on a peer
 
