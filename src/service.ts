@@ -5,6 +5,7 @@ import type { MessageType } from './message/envelope.js';
 import { RelayClient } from './relay/client.js';
 import type { PeerConfig } from './transport/http.js';
 import { decodeInboundEnvelope, sendToPeer } from './transport/http.js';
+import { shortKey } from './utils.js';
 
 /**
  * Service config: identity, peers keyed by name, optional relay.
@@ -143,7 +144,11 @@ export class AgoraService {
     }
 
     const maxReconnectDelay = this.config.relay?.reconnectMaxMs ?? 300000;
-    const name = this.config.identity.name ?? this.config.relay?.name;
+    let name = this.config.identity.name ?? this.config.relay?.name;
+    // Never use the short key (id) as the relay display name; treat it as no name
+    if (name && name === shortKey(this.config.identity.publicKey)) {
+      name = undefined;
+    }
     const opts = {
       relayUrl: url,
       publicKey: this.config.identity.publicKey,
