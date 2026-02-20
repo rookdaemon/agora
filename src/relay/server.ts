@@ -23,6 +23,11 @@ interface ConnectedAgent {
 }
 
 /**
+ * Delivery handler for REST agents: called when a message is routed to them.
+ */
+export type RestAgentDeliveryHandler = (envelope: Envelope, from: string, fromName?: string) => void;
+
+/**
  * Events emitted by RelayServer
  */
 export interface RelayServerEvents {
@@ -43,6 +48,7 @@ export class RelayServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private agents = new Map<string, ConnectedAgent>();
   private identity?: { publicKey: string; privateKey: string };
+  private restAgents = new Map<string, RestAgentDeliveryHandler>();
 
   constructor(identity?: { publicKey: string; privateKey: string }) {
     super();
@@ -114,6 +120,67 @@ export class RelayServer extends EventEmitter {
    */
   getAgents(): Map<string, ConnectedAgent> {
     return new Map(this.agents);
+  }
+
+  /**
+   * Register a REST agent to receive messages routed to its public key.
+   * Call unregisterRestAgent when the session ends.
+   */
+  registerRestAgent(publicKey: string, handler: RestAgentDeliveryHandler): void {
+    this.restAgents.set(publicKey, handler);
+  }
+
+  /**
+   * Unregister a REST agent (e.g. on disconnect or session expiry).
+   */
+  unregisterRestAgent(publicKey: string): void {
+    this.restAgents.delete(publicKey);
+  }
+
+  /**
+   * Route a pre-signed envelope from a REST agent to a recipient.
+   * Verifies the envelope and delivers it to a WebSocket or REST agent.
+   * Returns ok:false if the recipient is not connected.
+   */
+  routeEnvelope(from: string, to: string, envelope: Envelope, fromName?: string): { ok: boolean; error?: string } {
+    // Verify envelope integrity
+    const verification = verifyEnvelope(envelope);
+    if (!verification.valid) {
+      return { ok: false, error: `Invalid envelope: ${verification.reason || 'verification failed'}` };
+    }
+
+    if (envelope.sender !== from) {
+      return { ok: false, error: 'Envelope sender does not match from field' };
+    }
+
+    // Try REST agent first
+    const restHandler = this.restAgents.get(to);
+    if (restHandler) {
+      const senderAgent = this.agents.get(from);
+      restHandler(envelope, from, fromName ?? senderAgent?.name);
+      this.emit('message-relayed', from, to, envelope);
+      return { ok: true };
+    }
+
+    // Try WebSocket agent
+    const recipient = this.agents.get(to);
+    if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
+      return { ok: false, error: 'Recipient not connected' };
+    }
+
+    const relayMessage = {
+      type: 'message',
+      from,
+      name: fromName,
+      envelope,
+    };
+    try {
+      recipient.socket.send(JSON.stringify(relayMessage));
+      this.emit('message-relayed', from, to, envelope);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   /**
@@ -209,7 +276,15 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          // Find recipient
+          // Find recipient (WebSocket or REST)
+          const restHandler = this.restAgents.get(msg.to);
+          if (restHandler) {
+            const senderAgentRef = this.agents.get(agentPublicKey);
+            restHandler(envelope, agentPublicKey, senderAgentRef?.name);
+            this.emit('message-relayed', agentPublicKey, msg.to, envelope);
+            return;
+          }
+
           const recipient = this.agents.get(msg.to);
           if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
             this.sendError(socket, 'Recipient not connected');
