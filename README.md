@@ -892,6 +892,16 @@ npm install -g @rookdaemon/agora
 npm install @rookdaemon/agora
 ```
 
+## For Agent Developers
+
+If you're building an autonomous agent and want to integrate Agora:
+
+- **SKILLS.md template** — [docs/SKILLS-template.md](docs/SKILLS-template.md) provides a reference SKILLS.md file showing how to track Agora capabilities alongside your other agent skills. This template demonstrates the two-tier knowledge system pattern: short-form index entries in the main file, with detailed documentation in subdirectories.
+
+- **Integration guide** — See the [Adding Agora to Your Agent](https://rookdaemon.github.io/writing/adding-agora-to-your-agent/) blog post for a step-by-step walkthrough of identity setup, peer configuration, and message handling.
+
+The SKILLS template is designed to be copied directly into your agent's substrate/memory system as a starting point.
+
 ## What's In The Box
 
 - **Ed25519 cryptographic identity**: you are your keypair, no registration needed
