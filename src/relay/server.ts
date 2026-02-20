@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyEnvelope, createEnvelope, type Envelope } from '../message/envelope.js';
 import type { PeerListRequestPayload, PeerListResponsePayload } from '../message/types/peer-discovery.js';
+import { RestApiServer } from './rest/RestApiServer.js';
+import type { PeerSummary } from './rest/routes/peers.js';
 
 /**
  * Represents a connected agent in the relay
@@ -43,6 +45,7 @@ export class RelayServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private agents = new Map<string, ConnectedAgent>();
   private identity?: { publicKey: string; privateKey: string };
+  private restApi: RestApiServer | null = null;
 
   constructor(identity?: { publicKey: string; privateKey: string }) {
     super();
@@ -86,6 +89,7 @@ export class RelayServer extends EventEmitter {
    * Stop the relay server
    */
   async stop(): Promise<void> {
+    await this.stopRestApi();
     return new Promise((resolve, reject) => {
       if (!this.wss) {
         resolve();
@@ -114,6 +118,75 @@ export class RelayServer extends EventEmitter {
    */
   getAgents(): Map<string, ConnectedAgent> {
     return new Map(this.agents);
+  }
+
+  /**
+   * Start the REST API server on the given port.
+   * REST clients share the same peer registry as WebSocket clients.
+   */
+  async startRestApi(port: number): Promise<RestApiServer> {
+    this.restApi = new RestApiServer({
+      routeEnvelope: (from, to, envelope): { ok: boolean; error?: string } => this.routeEnvelope(from, to, envelope),
+      getWsPeers: (): PeerSummary[] => this.getWsPeers(),
+    });
+    await this.restApi.start(port);
+    return this.restApi;
+  }
+
+  /**
+   * Stop the REST API server (if running).
+   */
+  async stopRestApi(): Promise<void> {
+    if (this.restApi) {
+      await this.restApi.stop();
+      this.restApi = null;
+    }
+  }
+
+  /**
+   * Route an already-signed envelope from a peer (WS or REST) to the target.
+   * Returns `{ ok: true }` if delivered, or `{ ok: false, error }` otherwise.
+   */
+  routeEnvelope(from: string, to: string, envelope: Envelope): { ok: boolean; error?: string } {
+    // Try WebSocket peer first
+    const recipient = this.agents.get(to);
+    if (recipient && recipient.socket.readyState === WebSocket.OPEN) {
+      const senderAgent = this.agents.get(from);
+      const relayMessage = {
+        type: 'message',
+        from,
+        name: senderAgent?.name,
+        envelope,
+      };
+      try {
+        recipient.socket.send(JSON.stringify(relayMessage));
+        this.emit('message-relayed', from, to, envelope);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    // Try REST session peer
+    if (this.restApi && this.restApi.sessions.hasSession(to)) {
+      this.restApi.sessions.enqueueMessage(to, envelope);
+      this.emit('message-relayed', from, to, envelope);
+      return { ok: true };
+    }
+
+    return { ok: false, error: `Peer not found: ${to}` };
+  }
+
+  /**
+   * Returns a snapshot of connected WebSocket agents as PeerSummary objects.
+   */
+  private getWsPeers(): PeerSummary[] {
+    return Array.from(this.agents.values()).map(a => ({
+      publicKey: a.publicKey,
+      name: a.name,
+      lastSeen: a.lastSeen,
+      metadata: a.metadata as Record<string, unknown> | undefined,
+    }));
   }
 
   /**
@@ -209,28 +282,35 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          // Find recipient
+          // Find recipient: try WebSocket first, then REST session
           const recipient = this.agents.get(msg.to);
-          if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
-            this.sendError(socket, 'Recipient not connected');
+          if (recipient && recipient.socket.readyState === WebSocket.OPEN) {
+            // Forward envelope to recipient wrapped in relay message format
+            try {
+              const senderAgent = this.agents.get(agentPublicKey);
+              const relayMessage = {
+                type: 'message',
+                from: agentPublicKey,
+                name: senderAgent?.name,
+                envelope,
+              };
+              recipient.socket.send(JSON.stringify(relayMessage));
+              this.emit('message-relayed', agentPublicKey, msg.to, envelope);
+            } catch (err) {
+              this.sendError(socket, 'Failed to relay message');
+              this.emit('error', err as Error);
+            }
             return;
           }
 
-          // Forward envelope to recipient wrapped in relay message format
-          try {
-            const senderAgent = this.agents.get(agentPublicKey);
-            const relayMessage = {
-              type: 'message',
-              from: agentPublicKey,
-              name: senderAgent?.name,
-              envelope,
-            };
-            recipient.socket.send(JSON.stringify(relayMessage));
+          // Check REST client
+          if (this.restApi && this.restApi.sessions.hasSession(msg.to)) {
+            this.restApi.sessions.enqueueMessage(msg.to, envelope);
             this.emit('message-relayed', agentPublicKey, msg.to, envelope);
-          } catch (err) {
-            this.sendError(socket, 'Failed to relay message');
-            this.emit('error', err as Error);
+            return;
           }
+
+          this.sendError(socket, 'Recipient not connected');
           return;
         }
 

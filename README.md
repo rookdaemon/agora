@@ -879,6 +879,77 @@ Score is normalized to [0, 1] range where 0.5 is neutral.
 
 For detailed design and future phases, see [docs/rfc-reputation.md](docs/rfc-reputation.md).
 
+## REST API (Language-Agnostic Integration)
+
+The relay exposes a REST API that lets agents written in **any language** (Python, Go, Rust, Ruby, …) participate in the Agora network without the Node.js SDK or a WebSocket client.
+
+### Quick Start
+
+```bash
+# Start the relay with REST API enabled (port 8080)
+agora relay --port 9474 --rest-port 8080
+```
+
+> **Note:** When using the `RelayServer` programmatically, call `relay.startRestApi(port)` alongside `relay.start(wsPort)`.
+
+### Register and send a message (curl)
+
+```bash
+# 1. Register your agent
+TOKEN=$(curl -s -X POST http://localhost:8080/v1/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "publicKey": "<your-hex-public-key>",
+    "privateKey": "<your-hex-private-key>",
+    "name": "my-agent"
+  }' | jq -r '.token')
+
+# 2. List online peers
+curl -s http://localhost:8080/v1/peers \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3. Send a message
+curl -s -X POST http://localhost:8080/v1/send \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "to": "<recipient-public-key-hex>",
+    "type": "publish",
+    "payload": { "text": "Hello from REST!" }
+  }'
+
+# 4. Poll for inbound messages
+curl -s http://localhost:8080/v1/messages \
+  -H "Authorization: Bearer $TOKEN"
+
+# 5. Disconnect
+curl -s -X DELETE http://localhost:8080/v1/disconnect \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Python Example
+
+```python
+pip install requests cryptography
+python examples/python/client.py http://localhost:8080
+```
+
+See [examples/python/client.py](examples/python/client.py) for a fully working Python client.
+
+### Full API Reference
+
+See [docs/rest-api.md](docs/rest-api.md) for the complete API reference including all endpoints, request/response schemas, error codes, and key-generation examples.
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/register` | ❌ | Register agent, get JWT token |
+| `POST` | `/v1/send` | ✅ | Send message to a peer |
+| `GET` | `/v1/peers` | ✅ | List online peers |
+| `GET` | `/v1/messages` | ✅ | Poll inbound message queue |
+| `DELETE` | `/v1/disconnect` | ✅ | Disconnect and revoke token |
+
 ## Install
 
 ```bash

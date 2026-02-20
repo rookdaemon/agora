@@ -29,6 +29,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.1.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
@@ -38,6 +40,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "ws": "^8.19.0"
   }
 }
