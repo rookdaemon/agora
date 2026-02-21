@@ -20,7 +20,11 @@ export interface RelayServerMessage {
   name?: string;
   from?: string;
   envelope?: Envelope;
-  peers?: Array<{ publicKey: string; name?: string }>;
+  peers?: Array<{ publicKey: string; name?: string; storedFor?: boolean }>;
+  /** Peers that are offline but the relay stores messages for (store-and-forward) */
+  storedPeers?: Array<{ publicKey: string }>;
+  /** True when the peer referenced by this event has relay storage enabled */
+  storedFor?: boolean;
   code?: string;
   message?: string;
 }
@@ -31,4 +35,6 @@ export interface RelayServerMessage {
 export interface RelayPeer {
   publicKey: string;
   name?: string;
+  /** True when the relay stores messages for this peer (store-and-forward) */
+  storedFor?: boolean;
 }

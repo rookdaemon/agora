@@ -33,20 +33,38 @@ export interface RelayServerEvents {
 }
 
 /**
+ * A buffered message waiting for an offline stored peer.
+ */
+interface BufferedMessage {
+  from: string;
+  name?: string;
+  envelope: Envelope;
+}
+
+/**
  * WebSocket relay server for routing messages between agents.
  * 
  * Agents connect to the relay and register with their public key.
  * Messages are routed to recipients based on the 'to' field.
  * All envelopes are verified before being forwarded.
+ *
+ * Store-and-forward: the relay can be configured with a set of peer public keys
+ * that it will buffer messages for when those peers are offline.  When a stored
+ * peer reconnects the buffered messages are delivered in order.
  */
 export class RelayServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private agents = new Map<string, ConnectedAgent>();
   private identity?: { publicKey: string; privateKey: string };
+  /** Public keys of peers for which the relay stores messages (store-and-forward). */
+  private storedPeers: Set<string>;
+  /** Message buffer: publicKey → queued messages for offline stored peers. */
+  private messageBuffer = new Map<string, BufferedMessage[]>();
 
-  constructor(identity?: { publicKey: string; privateKey: string }) {
+  constructor(identity?: { publicKey: string; privateKey: string }, storedPeers?: string[]) {
     super();
     this.identity = identity;
+    this.storedPeers = new Set(storedPeers ?? []);
   }
 
   /**
@@ -147,15 +165,44 @@ export class RelayServer extends EventEmitter {
           this.agents.set(publicKey, agent);
           this.emit('agent-registered', publicKey);
 
-          // Send registration confirmation with list of online peers
+          // Deliver any messages buffered for this peer (store-and-forward)
+          const buffered = this.messageBuffer.get(publicKey);
+          if (buffered && buffered.length > 0) {
+            this.messageBuffer.delete(publicKey);
+            for (const bMsg of buffered) {
+              try {
+                socket.send(JSON.stringify({
+                  type: 'message',
+                  from: bMsg.from,
+                  name: bMsg.name,
+                  envelope: bMsg.envelope,
+                }));
+              } catch (err) {
+                this.emit('error', new Error(`Failed to deliver buffered message: ${err instanceof Error ? err.message : String(err)}`));
+              }
+            }
+          }
+
+          // Send registration confirmation with list of online peers.
+          // Mark peers that have relay storage enabled.
           const peers = Array.from(this.agents.values())
             .filter(a => a.publicKey !== publicKey)
-            .map(a => ({ publicKey: a.publicKey, name: a.name }));
+            .map(a => ({
+              publicKey: a.publicKey,
+              name: a.name,
+              storedFor: this.storedPeers.has(a.publicKey) ? true : undefined,
+            }));
+
+          // Include offline stored-for peers so the client knows they are always reachable.
+          const storedPeers = Array.from(this.storedPeers)
+            .filter(pk => !this.agents.has(pk))
+            .map(pk => ({ publicKey: pk }));
           
           socket.send(JSON.stringify({ 
             type: 'registered',
             publicKey,
             peers,
+            ...(storedPeers.length > 0 ? { storedPeers } : {}),
           }));
 
           // Notify other agents that this agent is now online
@@ -212,7 +259,19 @@ export class RelayServer extends EventEmitter {
           // Find recipient
           const recipient = this.agents.get(msg.to);
           if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
-            this.sendError(socket, 'Recipient not connected');
+            // If the relay has store-and-forward for this peer, buffer the message.
+            if (this.storedPeers.has(msg.to)) {
+              const buffer = this.messageBuffer.get(msg.to) ?? [];
+              buffer.push({
+                from: agentPublicKey,
+                name: senderAgent?.name,
+                envelope,
+              });
+              this.messageBuffer.set(msg.to, buffer);
+              this.emit('message-relayed', agentPublicKey, msg.to, envelope);
+            } else {
+              this.sendError(socket, 'Recipient not connected');
+            }
             return;
           }
 
@@ -331,10 +390,12 @@ export class RelayServer extends EventEmitter {
    * Broadcast a peer event to all connected agents
    */
   private broadcastPeerEvent(eventType: 'peer_online' | 'peer_offline', publicKey: string, name?: string): void {
+    const storedFor = this.storedPeers.has(publicKey);
     const message = {
       type: eventType,
       publicKey,
       name,
+      ...(storedFor ? { storedFor: true } : {}),
     };
     const messageStr = JSON.stringify(message);
 

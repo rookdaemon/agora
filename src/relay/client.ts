@@ -53,6 +53,8 @@ export class RelayClient extends EventEmitter {
   private isRegistered = false;
   private shouldReconnect = true;
   private onlinePeers = new Map<string, RelayPeer>();
+  /** Peers for which the relay stores messages (always considered reachable). */
+  private storedForPeers = new Set<string>();
 
   constructor(config: RelayClientConfig) {
     super();
@@ -145,10 +147,10 @@ export class RelayClient extends EventEmitter {
   }
 
   /**
-   * Check if a specific peer is online
+   * Check if a specific peer is online or has relay storage (always reachable)
    */
   isPeerOnline(publicKey: string): boolean {
-    return this.onlinePeers.has(publicKey);
+    return this.onlinePeers.has(publicKey) || this.storedForPeers.has(publicKey);
   }
 
   /**
@@ -230,9 +232,18 @@ export class RelayClient extends EventEmitter {
       case 'registered':
         this.isRegistered = true;
         if (msg.peers) {
-          // Populate initial peer list
+          // Populate initial peer list; track any that have relay storage
           for (const peer of msg.peers) {
             this.onlinePeers.set(peer.publicKey, peer);
+            if (peer.storedFor) {
+              this.storedForPeers.add(peer.publicKey);
+            }
+          }
+        }
+        // Offline stored-for peers: the relay buffers messages for them even when offline
+        if (msg.storedPeers) {
+          for (const peer of msg.storedPeers) {
+            this.storedForPeers.add(peer.publicKey);
           }
         }
         this.emit('connected');
@@ -263,8 +274,12 @@ export class RelayClient extends EventEmitter {
           const peer: RelayPeer = {
             publicKey: msg.publicKey,
             name: msg.name,
+            storedFor: msg.storedFor,
           };
           this.onlinePeers.set(msg.publicKey, peer);
+          if (msg.storedFor) {
+            this.storedForPeers.add(msg.publicKey);
+          }
           this.emit('peer_online', peer);
         }
         break;
@@ -274,6 +289,11 @@ export class RelayClient extends EventEmitter {
           const peer = this.onlinePeers.get(msg.publicKey);
           if (peer) {
             this.onlinePeers.delete(msg.publicKey);
+            // If the relay stores messages for this peer, keep it in storedForPeers
+            // so isPeerOnline() continues to return true.
+            if (msg.storedFor) {
+              this.storedForPeers.add(msg.publicKey);
+            }
             this.emit('peer_offline', peer);
           }
         }
@@ -352,5 +372,7 @@ export class RelayClient extends EventEmitter {
       this.reconnectTimeout = null;
     }
     this.onlinePeers.clear();
+    // Clear stored-for peers; they will be re-populated from the next 'registered' message.
+    this.storedForPeers.clear();
   }
 }
