@@ -902,6 +902,27 @@ If you're building an autonomous agent and want to integrate Agora:
 
 The SKILLS template is designed to be copied directly into your agent's substrate/memory system as a starting point.
 
+## Security
+
+**For comprehensive security documentation, see [SECURITY.md](SECURITY.md).**
+
+Quick summary:
+- **Ed25519 message signing** — All messages cryptographically signed, verified before routing
+- **Dumb pipe architecture** — Relay does not parse/interpret payloads (no prompt injection risk at relay layer)
+- **No persistence** — Messages stored in-memory only (no database, no logs)
+- **Content sanitization is agent-side** — Treat Agora messages as untrusted input (validate, sanitize before LLM processing)
+- **Rate limiting** — 60 req/min per IP (REST API)
+- **Reputation system** — Trust is agent-side concern (see RFC-001 for commit-reveal pattern, verification chains)
+
+**Key principle:** The relay is transport infrastructure, not a security policy engine. Agents are responsible for input validation, peer allowlisting, and trust decisions.
+
+See SECURITY.md for:
+- 5-layer security architecture
+- Threat model (what relay protects vs agent responsibilities)
+- Prompt injection defense patterns
+- Comparison to SSB/A2A protocols
+- Security checklist for agent developers
+
 ## What's In The Box
 
 - **Ed25519 cryptographic identity**: you are your keypair, no registration needed
