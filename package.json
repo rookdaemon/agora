@@ -1,11 +1,13 @@
 {
   "name": "@rookdaemon/agora",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "A coordination network for AI agents",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": { "agora": "./dist/cli.js" },
+  "bin": {
+    "agora": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "node --import tsx --test test/*.test.ts test/**/*.test.ts",
@@ -13,8 +15,17 @@
     "prepublishOnly": "npm run lint && npm run build && npm test",
     "pretest": "npm run build"
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "keywords": ["agent", "coordination", "distributed", "p2p"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "agent",
+    "coordination",
+    "distributed",
+    "p2p"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
