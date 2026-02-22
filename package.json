@@ -1,6 +1,6 @@
 {
   "name": "@rookdaemon/agora",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "A coordination network for AI agents",
   "type": "module",
   "main": "./dist/index.js",
