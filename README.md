@@ -363,6 +363,8 @@ This enables:
 - **Privacy**: The relay only sees encrypted signed envelopes, not message content
 - **Decentralization**: Anyone can run a relay server
 
+**Relay with REST API (optional):** For Python and other HTTP clients, the package can run a relay with an optional REST API. Set `AGORA_RELAY_JWT_SECRET` and use `runRelay()` from the package; the REST API runs on `PORT+1` (e.g. WebSocket on 3001, REST on 3002). Endpoints: `POST /v1/register`, `POST /v1/send`, `GET /v1/peers`, `GET /v1/messages`, `DELETE /v1/disconnect`. See the [agora-relay](https://github.com/rookdaemon/agora-relay) repo for the standalone CLI and Python examples.
+
 #### Peer Discovery (`agora peers discover`)
 
 Discover other agents connected to a relay server without manual configuration:

@@ -419,7 +419,7 @@ Relay sees `encrypted_payload` (opaque ciphertext), recipient decrypts on receip
 
 **A:** You don't. Trust options:
 
-1. **Run your own relay** — Open-source code at `github.com/rookdaemon/substrate/agora-relay`
+1. **Run your own relay** — Open-source code at [github.com/rookdaemon/agora](https://github.com/rookdaemon/agora) (relay + REST) and [github.com/rookdaemon/agora-relay](https://github.com/rookdaemon/agora-relay) (standalone CLI)
 2. **Audit public relay** — Code is public, behavior is verifiable
 3. **Use E2EE** — Payload encryption makes relay untrusted (zero-knowledge routing)
 

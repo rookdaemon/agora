@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyEnvelope, createEnvelope, type Envelope } from '../message/envelope.js';
 import type { PeerListRequestPayload, PeerListResponsePayload } from '../message/types/peer-discovery.js';
+import { MessageStore } from './store.js';
 
 /**
  * Represents a connected agent in the relay
@@ -39,23 +40,47 @@ export interface RelayServerEvents {
  * Messages are routed to recipients based on the 'to' field.
  * All envelopes are verified before being forwarded.
  */
+export interface RelayServerOptions {
+  /** Optional relay identity for peer_list_request handling */
+  identity?: { publicKey: string; privateKey: string };
+  /** Public keys that should have messages stored when offline */
+  storagePeers?: string[];
+  /** Directory for persisting messages for storage peers */
+  storageDir?: string;
+}
+
 export class RelayServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private agents = new Map<string, ConnectedAgent>();
   private identity?: { publicKey: string; privateKey: string };
+  private storagePeers: string[] = [];
+  private store: MessageStore | null = null;
 
-  constructor(identity?: { publicKey: string; privateKey: string }) {
+  constructor(options?: { publicKey: string; privateKey: string } | RelayServerOptions) {
     super();
-    this.identity = identity;
+    if (options) {
+      if ('identity' in options && options.identity) {
+        this.identity = options.identity;
+      } else if ('publicKey' in options && 'privateKey' in options) {
+        this.identity = { publicKey: options.publicKey, privateKey: options.privateKey };
+      }
+      const opts = options as RelayServerOptions;
+      if (opts.storagePeers?.length && opts.storageDir) {
+        this.storagePeers = opts.storagePeers;
+        this.store = new MessageStore(opts.storageDir);
+      }
+    }
   }
 
   /**
    * Start the relay server
+   * @param port - Port to listen on
+   * @param host - Optional host (default: all interfaces)
    */
-  start(port: number): Promise<void> {
+  start(port: number, host?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        this.wss = new WebSocketServer({ port });
+        this.wss = new WebSocketServer({ port, host: host ?? '0.0.0.0' });
         let resolved = false;
 
         this.wss.on('error', (error) => {
@@ -137,6 +162,13 @@ export class RelayServer extends EventEmitter {
           const publicKey = msg.publicKey;
           const name = msg.name;
           agentPublicKey = publicKey;
+
+          // If this pubkey was already connected, close the old connection
+          const existing = this.agents.get(publicKey);
+          if (existing) {
+            existing.socket.close();
+          }
+
           const agent: ConnectedAgent = {
             publicKey,
             name,
@@ -147,12 +179,17 @@ export class RelayServer extends EventEmitter {
           this.agents.set(publicKey, agent);
           this.emit('agent-registered', publicKey);
 
-          // Send registration confirmation with list of online peers
-          const peers = Array.from(this.agents.values())
+          // Build peers list: connected agents + storage peers (always considered "connected" for store-and-forward)
+          let peers = Array.from(this.agents.values())
             .filter(a => a.publicKey !== publicKey)
             .map(a => ({ publicKey: a.publicKey, name: a.name }));
-          
-          socket.send(JSON.stringify({ 
+          for (const storagePeer of this.storagePeers) {
+            if (storagePeer !== publicKey && !this.agents.has(storagePeer)) {
+              peers.push({ publicKey: storagePeer, name: undefined });
+            }
+          }
+
+          socket.send(JSON.stringify({
             type: 'registered',
             publicKey,
             peers,
@@ -160,6 +197,20 @@ export class RelayServer extends EventEmitter {
 
           // Notify other agents that this agent is now online
           this.broadcastPeerEvent('peer_online', publicKey, name);
+
+          // Deliver any stored messages for this peer
+          if (this.store && this.storagePeers.includes(publicKey)) {
+            const queued = this.store.load(publicKey);
+            for (const stored of queued) {
+              socket.send(JSON.stringify({
+                type: 'message',
+                from: stored.from,
+                name: stored.name,
+                envelope: stored.envelope,
+              }));
+            }
+            this.store.clear(publicKey);
+          }
           return;
         }
 
@@ -212,7 +263,18 @@ export class RelayServer extends EventEmitter {
           // Find recipient
           const recipient = this.agents.get(msg.to);
           if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
-            this.sendError(socket, 'Recipient not connected');
+            // If recipient is a storage peer, queue the message
+            if (this.store && this.storagePeers.includes(msg.to)) {
+              const senderAgent = this.agents.get(agentPublicKey);
+              this.store.save(msg.to, {
+                from: agentPublicKey,
+                name: senderAgent?.name,
+                envelope,
+              });
+              this.emit('message-relayed', agentPublicKey, msg.to, envelope);
+            } else {
+              this.sendError(socket, 'Recipient not connected');
+            }
             return;
           }
 
@@ -302,9 +364,10 @@ export class RelayServer extends EventEmitter {
         const agentName = agent?.name;
         this.agents.delete(agentPublicKey);
         this.emit('agent-disconnected', agentPublicKey);
-        
-        // Notify other agents that this agent went offline
-        this.broadcastPeerEvent('peer_offline', agentPublicKey, agentName);
+        // Storage-enabled peers are always considered connected; skip peer_offline for them
+        if (!this.storagePeers.includes(agentPublicKey)) {
+          this.broadcastPeerEvent('peer_offline', agentPublicKey, agentName);
+        }
       }
     });
 

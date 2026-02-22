@@ -13,6 +13,23 @@ export * from './config.js';
 export * from './relay/server.js';
 export * from './relay/client.js';
 export * from './relay/types.js';
+export * from './relay/message-buffer.js';
+export * from './relay/store.js';
+export {
+  createToken,
+  revokeToken,
+  requireAuth,
+  type JwtPayload,
+  type AuthenticatedRequest,
+} from './relay/jwt-auth.js';
+export {
+  createRestRouter,
+  type RelayInterface,
+  type RestSession,
+  type CreateEnvelopeFn,
+  type VerifyEnvelopeFn,
+} from './relay/rest-api.js';
+export { runRelay, type RunRelayOptions } from './relay/run-relay.js';
 export * from './utils.js';
 export * from './service.js';
 export * from './discovery/peer-discovery.js';
