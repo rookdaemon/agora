@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { createEnvelope, type Envelope, type MessageType } from '../message/envelope.js';
+import { createEnvelope, type Envelope, type MessageType } from '../message/envelope';
 
 /** Minimal interface for a connected relay client (avoids importing full RelayClient) */
 export interface RelayClientSender {

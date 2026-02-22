@@ -3,9 +3,9 @@
  * Core primitive for computational reputation.
  */
 
-import { createEnvelope, verifyEnvelope } from '../message/envelope.js';
-import type { VerificationRecord } from './types.js';
-import { validateVerificationRecord } from './types.js';
+import { createEnvelope, verifyEnvelope } from '../message/envelope';
+import type { VerificationRecord } from './types';
+import { validateVerificationRecord } from './types';
 
 /**
  * Create a signed verification record

@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PeerStore } from '../src/registry/peer-store.js';
-import { createCapability } from '../src/registry/capability.js';
-import type { Peer } from '../src/registry/peer.js';
+import { PeerStore } from '../src/registry/peer-store';
+import { createCapability } from '../src/registry/capability';
+import type { Peer } from '../src/registry/peer';
 
 describe('PeerStore', () => {
   describe('addOrUpdatePeer', () => {

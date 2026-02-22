@@ -9,8 +9,9 @@
     "agora": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "test": "node --import tsx --test test/*.test.ts test/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint src test --ext .ts",
     "prepublishOnly": "npm run lint && npm run build && npm test",
     "pretest": "npm run build"
@@ -38,6 +39,7 @@
     "@typescript-eslint/parser": "^8.54.0",
     "eslint": "^9.39.2",
     "supertest": "^7.1.0",
+    "tsup": "^8.3.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },

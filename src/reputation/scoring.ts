@@ -3,7 +3,7 @@
  * Domain-specific reputation scoring from verification history.
  */
 
-import type { VerificationRecord, TrustScore } from './types.js';
+import type { VerificationRecord, TrustScore } from './types';
 
 /**
  * Exponential decay function for time-based reputation degradation.

@@ -1,12 +1,12 @@
-import { createEnvelope, type Envelope } from '../message/envelope.js';
-import { PeerStore } from './peer-store.js';
-import type { Capability } from './capability.js';
-import type { Peer } from './peer.js';
+import { createEnvelope, type Envelope } from '../message/envelope';
+import { PeerStore } from './peer-store';
+import type { Capability } from './capability';
+import type { Peer } from './peer';
 import type {
   CapabilityAnnouncePayload,
   CapabilityQueryPayload,
   CapabilityResponsePayload,
-} from './messages.js';
+} from './messages';
 
 /**
  * DiscoveryService manages capability-based peer discovery.

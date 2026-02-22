@@ -6,7 +6,7 @@ import {
   verifySignature,
   exportKeyPair,
   importKeyPair,
-} from '../src/identity/keypair.js';
+} from '../src/identity/keypair';
 
 describe('KeyPair', () => {
   describe('generateKeyPair', () => {

@@ -11,26 +11,26 @@ import {
   createRestRouter,
   type RelayInterface,
   type RestSession,
-} from '../../src/relay/rest-api.js';
-import { MessageBuffer } from '../../src/relay/message-buffer.js';
+} from '../../src/relay/rest-api';
+import { MessageBuffer } from '../../src/relay/message-buffer';
 
 const TEST_JWT_SECRET = 'test-secret-at-least-32-bytes-long!!';
 
-function setJwtEnv() {
+function setJwtEnv(): void {
   process.env.AGORA_RELAY_JWT_SECRET = TEST_JWT_SECRET;
   process.env.AGORA_JWT_EXPIRY_SECONDS = '3600';
 }
 
-function clearJwtEnv() {
+function clearJwtEnv(): void {
   delete process.env.AGORA_RELAY_JWT_SECRET;
   delete process.env.AGORA_JWT_EXPIRY_SECONDS;
 }
 
-function mockSocket(open = true) {
+function mockSocket(open = true): { readyState: number; sent: string[]; send(data: string): void } {
   return {
     readyState: open ? 1 : 3,
     sent: [] as string[],
-    send(data: string) {
+    send(data: string): void {
       this.sent.push(data);
     },
   };
@@ -55,12 +55,12 @@ function createMockRelay(
 ): MockRelay {
   const listeners: Array<(from: string, to: string, env: unknown) => void> = [];
   return {
-    getAgents: () => agents as ReturnType<RelayInterface['getAgents']>,
-    on(_event: string, handler: (from: string, to: string, env: unknown) => void) {
+    getAgents: (): ReturnType<RelayInterface['getAgents']> => agents as ReturnType<RelayInterface['getAgents']>,
+    on(_event: string, handler: (from: string, to: string, env: unknown) => void): void {
       listeners.push(handler);
     },
     _listeners: listeners,
-    _emit(from: string, to: string, env: unknown) {
+    _emit(from: string, to: string, env: unknown): void {
       listeners.forEach((h) => h(from, to, env));
     },
   };
@@ -74,7 +74,7 @@ function mockCreateEnvelope(
   payload: unknown,
   timestamp?: number,
   inReplyTo?: string
-) {
+): { id: string; type: string; sender: string; timestamp: number; payload: unknown; signature: string; inReplyTo?: string } {
   return {
     id: `env-${++envelopeCounter}`,
     type,
@@ -86,7 +86,7 @@ function mockCreateEnvelope(
   };
 }
 
-function mockVerifyEnvelope(env: unknown) {
+function mockVerifyEnvelope(env: unknown): { valid: boolean; reason?: string } {
   const e = env as { signature?: string };
   if (e.signature?.startsWith('sig-')) return { valid: true };
   return { valid: false, reason: 'bad signature' };
@@ -96,7 +96,7 @@ function buildApp(
   relay: MockRelay = createMockRelay(),
   buffer = new MessageBuffer(),
   sessions = new Map<string, RestSession>()
-) {
+): { app: express.Express; relay: MockRelay; buffer: MessageBuffer; sessions: Map<string, RestSession> } {
   const app = express();
   app.use(express.json());
   app.use(
@@ -153,7 +153,7 @@ describe('POST /v1/register', () => {
   });
 
   it('returns 400 when key pair verification fails', async () => {
-    const badVerify = () => ({ valid: false, reason: 'invalid key' });
+    const badVerify = (): { valid: boolean; reason?: string } => ({ valid: false, reason: 'invalid key' });
     const sessions = new Map<string, RestSession>();
     const buffer = new MessageBuffer();
     const app = express();
@@ -180,7 +180,7 @@ describe('POST /v1/send', () => {
   beforeEach(setJwtEnv);
   afterEach(clearJwtEnv);
 
-  async function registerAndGetToken(app: express.Express) {
+  async function registerAndGetToken(app: express.Express): Promise<string> {
     const res = await supertest(app).post('/v1/register').send({
       publicKey: ALICE.publicKey,
       privateKey: ALICE.privateKey,

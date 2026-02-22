@@ -1,13 +1,13 @@
 import { describe, it, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../src/identity/keypair.js';
+import { generateKeyPair } from '../src/identity/keypair';
 import {
   AgoraService,
   type AgoraServiceConfig,
   type RelayClientLike,
   type RelayClientFactory,
-} from '../src/service.js';
-import type { PeerConfig } from '../src/transport/http.js';
+} from '../src/service';
+import type { PeerConfig } from '../src/transport/http';
 
 function createMockRelayClient(options?: {
   connected?: boolean;

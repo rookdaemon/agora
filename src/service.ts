@@ -1,12 +1,12 @@
-import type { AgoraIdentity, RelayConfig } from './config.js';
-import { getDefaultConfigPath, loadAgoraConfigAsync } from './config.js';
-import type { Envelope } from './message/envelope.js';
-import type { MessageType } from './message/envelope.js';
-import { RelayClient } from './relay/client.js';
-import type { PeerConfig } from './transport/http.js';
-import { decodeInboundEnvelope, sendToPeer } from './transport/http.js';
-import { sendViaRelay } from './transport/relay.js';
-import { shortKey } from './utils.js';
+import type { AgoraIdentity, RelayConfig } from './config';
+import { getDefaultConfigPath, loadAgoraConfigAsync } from './config';
+import type { Envelope } from './message/envelope';
+import type { MessageType } from './message/envelope';
+import { RelayClient } from './relay/client';
+import type { PeerConfig } from './transport/http';
+import { decodeInboundEnvelope, sendToPeer } from './transport/http';
+import { sendViaRelay } from './transport/relay';
+import { shortKey } from './utils';
 
 /**
  * Service config: identity, peers keyed by name, optional relay.

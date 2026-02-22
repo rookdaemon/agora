@@ -1,41 +1,41 @@
-export * from './identity/keypair.js';
-export * from './message/envelope.js';
-export * from './registry/capability.js';
-export * from './registry/peer.js';
-export * from './registry/peer-store.js';
-export * from './registry/messages.js';
-export * from './registry/discovery-service.js';
-export * from './message/types/paper-discovery.js';
-export * from './message/types/peer-discovery.js';
-export * from './transport/http.js';
-export * from './transport/peer-config.js';
-export * from './config.js';
-export * from './relay/server.js';
-export * from './relay/client.js';
-export * from './relay/types.js';
-export * from './relay/message-buffer.js';
-export * from './relay/store.js';
+export * from './identity/keypair';
+export * from './message/envelope';
+export * from './registry/capability';
+export * from './registry/peer';
+export * from './registry/peer-store';
+export * from './registry/messages';
+export * from './registry/discovery-service';
+export * from './message/types/paper-discovery';
+export * from './message/types/peer-discovery';
+export * from './transport/http';
+export * from './transport/peer-config';
+export * from './config';
+export * from './relay/server';
+export * from './relay/client';
+export * from './relay/types';
+export * from './relay/message-buffer';
+export * from './relay/store';
 export {
   createToken,
   revokeToken,
   requireAuth,
   type JwtPayload,
   type AuthenticatedRequest,
-} from './relay/jwt-auth.js';
+} from './relay/jwt-auth';
 export {
   createRestRouter,
   type RelayInterface,
   type RestSession,
   type CreateEnvelopeFn,
   type VerifyEnvelopeFn,
-} from './relay/rest-api.js';
-export { runRelay, type RunRelayOptions } from './relay/run-relay.js';
-export * from './utils.js';
-export * from './service.js';
-export * from './discovery/peer-discovery.js';
-export * from './discovery/bootstrap.js';
-export * from './reputation/types.js';
-export * from './reputation/verification.js';
-export * from './reputation/commit-reveal.js';
-export * from './reputation/scoring.js';
-export * from './reputation/store.js';
+} from './relay/rest-api';
+export { runRelay, type RunRelayOptions } from './relay/run-relay';
+export * from './utils';
+export * from './service';
+export * from './discovery/peer-discovery';
+export * from './discovery/bootstrap';
+export * from './reputation/types';
+export * from './reputation/verification';
+export * from './reputation/commit-reveal';
+export * from './reputation/scoring';
+export * from './reputation/store';

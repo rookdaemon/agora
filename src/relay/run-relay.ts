@@ -13,16 +13,16 @@
 
 import http from 'node:http';
 import express from 'express';
-import { RelayServer, type RelayServerOptions } from './server.js';
+import { RelayServer, type RelayServerOptions } from './server';
 import {
   createEnvelope,
   verifyEnvelope,
   type Envelope,
   type MessageType,
-} from '../message/envelope.js';
-import { createRestRouter, type CreateEnvelopeFn } from './rest-api.js';
-import { MessageBuffer } from './message-buffer.js';
-import type { RestSession } from './rest-api.js';
+} from '../message/envelope';
+import { createRestRouter, type CreateEnvelopeFn } from './rest-api';
+import { MessageBuffer } from './message-buffer';
+import type { RestSession } from './rest-api';
 
 /** Wrapper so REST API can pass string type; createEnvelope expects MessageType */
 const createEnvelopeForRest: CreateEnvelopeFn = (
@@ -88,7 +88,7 @@ export async function runRelay(options: RunRelayOptions = {}): Promise<{
   const app = express();
   app.use(express.json());
 
-  const verifyForRest = (envelope: unknown) =>
+  const verifyForRest = (envelope: unknown): { valid: boolean; reason?: string } =>
     verifyEnvelope(envelope as Envelope);
 
   const router = createRestRouter(

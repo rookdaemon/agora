@@ -1,11 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../src/identity/keypair.js';
-import { PeerStore } from '../src/registry/peer-store.js';
-import { createCapability } from '../src/registry/capability.js';
-import { DiscoveryService } from '../src/registry/discovery-service.js';
-import { verifyEnvelope, createEnvelope } from '../src/message/envelope.js';
-import type { CapabilityQueryPayload } from '../src/registry/messages.js';
+import { generateKeyPair } from '../src/identity/keypair';
+import { PeerStore } from '../src/registry/peer-store';
+import { createCapability } from '../src/registry/capability';
+import { DiscoveryService } from '../src/registry/discovery-service';
+import { verifyEnvelope, createEnvelope } from '../src/message/envelope';
+import type { CapabilityQueryPayload } from '../src/registry/messages';
 
 describe('DiscoveryService', () => {
   describe('announce', () => {

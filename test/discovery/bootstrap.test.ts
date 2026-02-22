@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { getDefaultBootstrapRelay, parseBootstrapRelay, DEFAULT_BOOTSTRAP_RELAYS } from '../../src/discovery/bootstrap.js';
+import { getDefaultBootstrapRelay, parseBootstrapRelay, DEFAULT_BOOTSTRAP_RELAYS } from '../../src/discovery/bootstrap';
 
 describe('Bootstrap', () => {
   describe('DEFAULT_BOOTSTRAP_RELAYS', () => {

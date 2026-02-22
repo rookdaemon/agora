@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { createCapability, validateCapability, type Capability } from '../src/registry/capability.js';
+import { createCapability, validateCapability, type Capability } from '../src/registry/capability';
 
 describe('Capability', () => {
   describe('createCapability', () => {

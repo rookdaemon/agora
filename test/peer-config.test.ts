@@ -7,7 +7,7 @@ import {
   savePeerConfig,
   initPeerConfig,
   type PeerConfigFile,
-} from '../src/transport/peer-config.js';
+} from '../src/transport/peer-config';
 
 describe('Peer Configuration', () => {
   const testDir = '/tmp/agora-test';

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { generateKeyPair } from '../identity/keypair.js';
+import { generateKeyPair } from '../identity/keypair';
 
 export interface PeerConfigFile {
   identity: {

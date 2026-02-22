@@ -3,11 +3,11 @@ import assert from 'node:assert';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateKeyPair } from '../../src/identity/keypair.js';
-import { createVerification } from '../../src/reputation/verification.js';
-import { createCommit, createReveal, verifyReveal } from '../../src/reputation/commit-reveal.js';
-import { computeTrustScore, computeAllTrustScores } from '../../src/reputation/scoring.js';
-import { ReputationStore } from '../../src/reputation/store.js';
+import { generateKeyPair } from '../../src/identity/keypair';
+import { createVerification } from '../../src/reputation/verification';
+import { createCommit, createReveal, verifyReveal } from '../../src/reputation/commit-reveal';
+import { computeTrustScore, computeAllTrustScores } from '../../src/reputation/scoring';
+import { ReputationStore } from '../../src/reputation/store';
 
 describe('Reputation Integration', () => {
   function createTempStore(): { store: ReputationStore; cleanup: () => void } {

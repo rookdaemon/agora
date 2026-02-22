@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
-import type { KeyPair } from '../identity/keypair.js';
-import type { Envelope } from '../message/envelope.js';
-import { createEnvelope, verifyEnvelope } from '../message/envelope.js';
-import type { AnnouncePayload } from '../registry/messages.js';
+import type { KeyPair } from '../identity/keypair';
+import type { Envelope } from '../message/envelope';
+import { createEnvelope, verifyEnvelope } from '../message/envelope';
+import type { AnnouncePayload } from '../registry/messages';
 
 /**
  * Events emitted by PeerClient

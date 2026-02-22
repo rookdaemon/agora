@@ -1,4 +1,4 @@
-import type { Capability } from './capability.js';
+import type { Capability } from './capability';
 
 /**
  * A peer is an agent on the network

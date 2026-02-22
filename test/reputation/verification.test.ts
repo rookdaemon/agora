@@ -4,8 +4,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../../src/identity/keypair.js';
-import { createVerification, verifyVerificationSignature } from '../../src/reputation/verification.js';
+import { generateKeyPair } from '../../src/identity/keypair';
+import { createVerification, verifyVerificationSignature } from '../../src/reputation/verification';
 
 describe('Verification', () => {
   describe('createVerification', () => {

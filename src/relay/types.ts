@@ -1,4 +1,4 @@
-import type { Envelope } from '../message/envelope.js';
+import type { Envelope } from '../message/envelope';
 
 /**
  * Messages sent from client to relay server

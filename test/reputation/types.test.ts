@@ -8,7 +8,7 @@ import {
   validateVerificationRecord,
   validateCommitRecord,
   validateRevealRecord,
-} from '../../src/reputation/types.js';
+} from '../../src/reputation/types';
 
 describe('Reputation Types', () => {
   describe('validateVerificationRecord', () => {

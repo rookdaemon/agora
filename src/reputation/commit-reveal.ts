@@ -4,9 +4,9 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createEnvelope } from '../message/envelope.js';
-import type { CommitRecord, RevealRecord } from './types.js';
-import { validateCommitRecord, validateRevealRecord } from './types.js';
+import { createEnvelope } from '../message/envelope';
+import type { CommitRecord, RevealRecord } from './types';
+import { validateCommitRecord, validateRevealRecord } from './types';
 
 /**
  * Create a commitment hash for a prediction

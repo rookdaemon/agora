@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
-import type { KeyPair } from '../identity/keypair.js';
-import type { Envelope } from '../message/envelope.js';
-import type { AnnouncePayload } from '../registry/messages.js';
-import { PeerServer } from './server.js';
-import { PeerClient } from './client.js';
+import type { KeyPair } from '../identity/keypair';
+import type { Envelope } from '../message/envelope';
+import type { AnnouncePayload } from '../registry/messages';
+import { PeerServer } from './server';
+import { PeerClient } from './client';
 
 /**
  * Peer information with public key

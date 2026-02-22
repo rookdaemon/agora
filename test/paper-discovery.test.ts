@@ -1,8 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../src/identity/keypair.js';
-import { createEnvelope, verifyEnvelope } from '../src/message/envelope.js';
-import type { PaperDiscoveryPayload } from '../src/message/types/paper-discovery.js';
+import { generateKeyPair } from '../src/identity/keypair';
+import { createEnvelope, verifyEnvelope } from '../src/message/envelope';
+import type { PaperDiscoveryPayload } from '../src/message/types/paper-discovery';
 
 describe('PaperDiscoveryPayload', () => {
   const samplePayload: PaperDiscoveryPayload = {

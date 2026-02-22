@@ -17,8 +17,8 @@ import {
   revokeToken,
   requireAuth,
   type AuthenticatedRequest,
-} from './jwt-auth.js';
-import { MessageBuffer, type BufferedMessage } from './message-buffer.js';
+} from './jwt-auth';
+import { MessageBuffer, type BufferedMessage } from './message-buffer';
 
 const apiRateLimit = rateLimit({
   windowMs: 60_000,

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../src/identity/keypair.js';
+import { generateKeyPair } from '../src/identity/keypair';
 import {
   createEnvelope,
   verifyEnvelope,
@@ -8,7 +8,7 @@ import {
   computeId,
   type Envelope,
   type MessageType,
-} from '../src/message/envelope.js';
+} from '../src/message/envelope';
 
 describe('Envelope', () => {
   describe('canonicalize', () => {

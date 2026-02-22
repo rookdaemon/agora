@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { createEnvelope, verifyEnvelope, type Envelope } from '../message/envelope.js';
-import type { RelayClient } from '../relay/client.js';
-import type { PeerListRequestPayload, PeerListResponsePayload, PeerReferralPayload } from '../message/types/peer-discovery.js';
+import { createEnvelope, verifyEnvelope, type Envelope } from '../message/envelope';
+import type { RelayClient } from '../relay/client';
+import type { PeerListRequestPayload, PeerListResponsePayload, PeerReferralPayload } from '../message/types/peer-discovery';
 
 /**
  * Configuration for PeerDiscoveryService

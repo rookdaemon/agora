@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { WebSocketServer, WebSocket } from 'ws';
-import { verifyEnvelope, createEnvelope, type Envelope } from '../message/envelope.js';
-import type { PeerListRequestPayload, PeerListResponsePayload } from '../message/types/peer-discovery.js';
-import { MessageStore } from './store.js';
+import { verifyEnvelope, createEnvelope, type Envelope } from '../message/envelope';
+import type { PeerListRequestPayload, PeerListResponsePayload } from '../message/types/peer-discovery';
+import { MessageStore } from './store';
 
 /**
  * Represents a connected agent in the relay

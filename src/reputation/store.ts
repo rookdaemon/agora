@@ -5,8 +5,8 @@
 
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
-import type { VerificationRecord, CommitRecord, RevealRecord } from './types.js';
-import { validateVerificationRecord, validateCommitRecord, validateRevealRecord } from './types.js';
+import type { VerificationRecord, CommitRecord, RevealRecord } from './types';
+import { validateVerificationRecord, validateCommitRecord, validateRevealRecord } from './types';
 
 /**
  * Record type discriminator for JSONL storage

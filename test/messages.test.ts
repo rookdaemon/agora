@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../src/identity/keypair.js';
-import { createEnvelope } from '../src/message/envelope.js';
-import { createCapability } from '../src/registry/capability.js';
-import type { AnnouncePayload, DiscoverPayload, DiscoverResponsePayload } from '../src/registry/messages.js';
+import { generateKeyPair } from '../src/identity/keypair';
+import { createEnvelope } from '../src/message/envelope';
+import { createCapability } from '../src/registry/capability';
+import type { AnnouncePayload, DiscoverPayload, DiscoverResponsePayload } from '../src/registry/messages';
 
 describe('Registry Messages', () => {
   describe('AnnouncePayload', () => {

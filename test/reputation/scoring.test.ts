@@ -4,9 +4,9 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../../src/identity/keypair.js';
-import { createVerification } from '../../src/reputation/verification.js';
-import { decay, computeTrustScore, computeTrustScores } from '../../src/reputation/scoring.js';
+import { generateKeyPair } from '../../src/identity/keypair';
+import { createVerification } from '../../src/reputation/verification';
+import { decay, computeTrustScore, computeTrustScores } from '../../src/reputation/scoring';
 
 describe('Scoring', () => {
   describe('decay', () => {

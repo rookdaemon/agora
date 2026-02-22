@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
-import { verifyEnvelope, type Envelope } from '../message/envelope.js';
-import type { RelayClientMessage, RelayServerMessage, RelayPeer } from './types.js';
+import { verifyEnvelope, type Envelope } from '../message/envelope';
+import type { RelayClientMessage, RelayServerMessage, RelayPeer } from './types';
 
 /**
  * Configuration for RelayClient

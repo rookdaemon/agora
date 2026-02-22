@@ -4,13 +4,13 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../../src/identity/keypair.js';
+import { generateKeyPair } from '../../src/identity/keypair';
 import {
   hashPrediction,
   createCommit,
   createReveal,
   verifyReveal,
-} from '../../src/reputation/commit-reveal.js';
+} from '../../src/reputation/commit-reveal';
 
 describe('Commit-Reveal', () => {
   describe('hashPrediction', () => {

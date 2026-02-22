@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { signMessage, verifySignature } from '../identity/keypair.js';
+import { signMessage, verifySignature } from '../identity/keypair';
 
 /**
  * Message types on the Agora network.

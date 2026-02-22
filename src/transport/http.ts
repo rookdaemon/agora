@@ -1,4 +1,4 @@
-import { createEnvelope, verifyEnvelope, type Envelope, type MessageType } from '../message/envelope.js';
+import { createEnvelope, verifyEnvelope, type Envelope, type MessageType } from '../message/envelope';
 
 export interface PeerConfig {
   /** Peer's webhook URL, e.g. http://localhost:18790/hooks (undefined for relay-only peers) */

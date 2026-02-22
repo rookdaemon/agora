@@ -1,4 +1,4 @@
-import type { Peer } from './peer.js';
+import type { Peer } from './peer';
 
 /**
  * In-memory store for known peers on the network

@@ -1,13 +1,13 @@
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert';
-import { generateKeyPair } from '../src/identity/keypair.js';
-import { createEnvelope, verifyEnvelope } from '../src/message/envelope.js';
+import { generateKeyPair } from '../src/identity/keypair';
+import { createEnvelope, verifyEnvelope } from '../src/message/envelope';
 import {
   sendToPeer,
   decodeInboundEnvelope,
   type TransportConfig,
   type PeerConfig,
-} from '../src/transport/http.js';
+} from '../src/transport/http';
 
 describe('HTTP Transport', () => {
   describe('sendToPeer', () => {

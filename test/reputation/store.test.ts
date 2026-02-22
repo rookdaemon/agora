@@ -6,10 +6,10 @@ import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { generateKeyPair } from '../../src/identity/keypair.js';
-import { createVerification } from '../../src/reputation/verification.js';
-import { createCommit, createReveal } from '../../src/reputation/commit-reveal.js';
-import { ReputationStore } from '../../src/reputation/store.js';
+import { generateKeyPair } from '../../src/identity/keypair';
+import { createVerification } from '../../src/reputation/verification';
+import { createCommit, createReveal } from '../../src/reputation/commit-reveal';
+import { ReputationStore } from '../../src/reputation/store';
 
 const TEST_DIR = '/tmp/agora-test-reputation';
 
