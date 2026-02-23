@@ -39,3 +39,5 @@ export * from './reputation/verification';
 export * from './reputation/commit-reveal';
 export * from './reputation/scoring';
 export * from './reputation/store';
+export * from './reputation/network';
+export * from './reputation/sync';

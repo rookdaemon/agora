@@ -33,18 +33,44 @@ function verdictWeight(verdict: 'correct' | 'incorrect' | 'disputed'): number {
 }
 
 /**
+ * Options for recursive trust score computation.
+ */
+export interface TrustScoreOptions {
+  /**
+   * Optional function to get verifier's trust score for recursive weighting.
+   * When provided, each verification is weighted by the verifier's own trust score.
+   * Defaults to returning 1.0 (flat weighting, backward compatible).
+   * New agents with no score should return 0.5 (neutral bootstrapping weight).
+   */
+  getVerifierScore?: (verifier: string, domain: string) => number;
+  /**
+   * Maximum recursion depth for recursive scoring. Default: 3.
+   * At depth 0, flat weighting (1.0) is used instead of calling getVerifierScore.
+   */
+  maxDepth?: number;
+  /**
+   * Internal: set of agents currently being scored, used for cycle detection.
+   * Pass a shared mutable Set when making recursive calls to enable cycle detection.
+   * When a verifier is found in this set, neutral weight (0.5) is used instead of recursing.
+   */
+  visitedAgents?: Set<string>;
+}
+
+/**
  * Compute trust score for an agent in a specific domain
  * @param agent - Public key of the agent being scored
  * @param domain - Capability domain
  * @param verifications - All verification records (will be filtered by target and domain)
  * @param currentTime - Current timestamp (ms)
+ * @param options - Optional settings for recursive scoring and cycle detection
  * @returns TrustScore object with computed reputation
  */
 export function computeTrustScore(
   agent: string,
   domain: string,
   verifications: VerificationRecord[],
-  currentTime: number
+  currentTime: number,
+  options?: TrustScoreOptions
 ): TrustScore {
   // Filter verifications for this agent and domain
   const relevantVerifications = verifications.filter(
@@ -62,6 +88,15 @@ export function computeTrustScore(
     };
   }
   
+  const maxDepth = options?.maxDepth ?? 3;
+  const visitedAgents = options?.visitedAgents;
+  const getVerifierScore = options?.getVerifierScore;
+
+  // Mark current agent as being scored (cycle detection)
+  if (visitedAgents) {
+    visitedAgents.add(agent);
+  }
+
   // Compute weighted score with time decay
   let totalWeight = 0;
   const verifierWeights = new Map<string, number>();
@@ -70,13 +105,31 @@ export function computeTrustScore(
     const deltaTime = currentTime - verification.timestamp;
     const decayFactor = decay(deltaTime);
     const verdict = verdictWeight(verification.verdict);
-    const weight = verdict * verification.confidence * decayFactor;
+
+    // Determine verifier trust weight for recursive scoring
+    let verifierTrustWeight: number;
+    if (!getVerifierScore || maxDepth <= 0) {
+      // No recursive scoring or depth limit reached — use flat weight
+      verifierTrustWeight = 1.0;
+    } else if (visitedAgents?.has(verification.verifier)) {
+      // Cycle detected — use neutral weight (0.5) instead of recursing
+      verifierTrustWeight = 0.5;
+    } else {
+      verifierTrustWeight = getVerifierScore(verification.verifier, domain);
+    }
+
+    const weight = verdict * verification.confidence * decayFactor * verifierTrustWeight;
     
     totalWeight += weight;
     
     // Track verifier contributions
-    const currentVerifierWeight = verifierWeights.get(verification.verifier) || 0;
+    const currentVerifierWeight = verifierWeights.get(verification.verifier) ?? 0;
     verifierWeights.set(verification.verifier, currentVerifierWeight + Math.abs(weight));
+  }
+
+  // Backtrack: remove current agent from visited set for correct DFS traversal
+  if (visitedAgents) {
+    visitedAgents.delete(agent);
   }
   
   // Normalize score to 0-1 range
