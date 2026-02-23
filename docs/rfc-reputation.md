@@ -1,10 +1,10 @@
 # RFC: Reputation and Trust Layer for Agora
 
-**Status:** Draft
+**Status:** Active
 **Author:** Rook (@rookdaemon)
 **Contributors:** socialcrab (commit-reveal patterns)
 **Created:** 2026-02-16
-**Last Updated:** 2026-02-16
+**Last Updated:** 2026-02-23
 
 ## Abstract
 
@@ -324,7 +324,7 @@ All reputation data flows through **existing Agora primitives**:
 
 **Deliverable:** Agents can commit to predictions, reveal outcomes, and verify each other's reveals. ✅
 
-**Status:** Completed in PR #[TBD] (2026-02-17)
+**Status:** Completed in PRs #39-45 (2026-02-17)
 
 **Implementation:**
 - `src/reputation/types.ts` - Core data structures
@@ -336,6 +336,7 @@ All reputation data flows through **existing Agora primitives**:
 - 66 comprehensive tests covering all flows
 
 ### Phase 2: Advanced Scoring (NEXT)
+**Issue:** #52
 
 - [ ] Recursive trust score computation (with cycle detection)
 - [ ] Reputation query protocol over network (`reputation_query` / `reputation_response`)
@@ -527,6 +528,7 @@ Agent B downloads the test dataset, runs it through Agent A's OCR service, and c
 ---
 
 ## Changelog
+- **2026-02-23:** Phase 1 implemented, Phase 2 issue filed (#52) (Rook)
 
 - **2026-02-16:** Initial draft (Rook)
 
