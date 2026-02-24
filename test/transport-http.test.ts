@@ -135,6 +135,71 @@ describe('HTTP Transport', () => {
       assert.strictEqual(result.ok, false);
       assert.strictEqual(result.status, 0);
       assert.ok(result.error?.includes('Network error'));
+      // Should retry once on network error (2 total calls)
+      assert.strictEqual(mockFetch.mock.callCount(), 2);
+    });
+
+    it('should not retry on HTTP 4xx errors', async () => {
+      const identity = generateKeyPair();
+      const peerIdentity = generateKeyPair();
+
+      const mockFetch = mock.fn(async () =>
+        new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' })
+      );
+
+      // @ts-expect-error - replacing global fetch
+      global.fetch = mockFetch;
+
+      const peer: PeerConfig = {
+        url: 'http://localhost:18790/hooks',
+        token: 'wrong-token',
+        publicKey: peerIdentity.publicKey,
+      };
+
+      const config: TransportConfig = {
+        identity,
+        peers: new Map([[peerIdentity.publicKey, peer]]),
+      };
+
+      const result = await sendToPeer(config, peerIdentity.publicKey, 'announce', {});
+
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(result.status, 401);
+      // No retry for HTTP errors (only 1 call)
+      assert.strictEqual(mockFetch.mock.callCount(), 1);
+    });
+
+    it('should omit Authorization header when token is not set', async () => {
+      const identity = generateKeyPair();
+      const peerIdentity = generateKeyPair();
+
+      let capturedOptions: RequestInit | undefined;
+      const mockFetch = mock.fn(async (_url: string, options?: RequestInit) => {
+        capturedOptions = options;
+        return new Response(null, { status: 200, statusText: 'OK' });
+      });
+
+      // @ts-expect-error - replacing global fetch
+      global.fetch = mockFetch;
+
+      const peer: PeerConfig = {
+        url: 'http://localhost:18790/hooks',
+        // no token
+        publicKey: peerIdentity.publicKey,
+      };
+
+      const config: TransportConfig = {
+        identity,
+        peers: new Map([[peerIdentity.publicKey, peer]]),
+      };
+
+      const result = await sendToPeer(config, peerIdentity.publicKey, 'announce', {});
+
+      assert.strictEqual(result.ok, true);
+      assert.ok(capturedOptions);
+      const headers = capturedOptions.headers as Record<string, string>;
+      assert.strictEqual(headers['Authorization'], undefined);
+      assert.strictEqual(headers['Content-Type'], 'application/json');
     });
   });
 

@@ -131,7 +131,7 @@ describe('AgoraService.sendMessage', () => {
 
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.status, 0);
-    assert.strictEqual(mockFetch.mock.callCount(), 1);
+    assert.strictEqual(mockFetch.mock.callCount(), 2); // one retry on network error
     assert.strictEqual((relayClient.send as ReturnType<typeof mock.fn>).mock.callCount(), 1);
   });
 
@@ -212,5 +212,137 @@ describe('AgoraService.sendMessage', () => {
 
     assert.strictEqual(result.ok, false);
     assert.ok(result.error?.includes('Unknown peer'));
+  });
+
+  it('should succeed with --direct when peer URL is reachable', async () => {
+    const mockFetch = mock.fn(async () =>
+      new Response(null, { status: 200, statusText: 'OK' })
+    );
+    // @ts-expect-error - replacing global fetch
+    globalThis.fetch = mockFetch;
+
+    const peer: PeerConfig = {
+      publicKey: peerIdentity.publicKey,
+      url: 'http://localhost:18790/hooks',
+      token: 'test-token',
+    };
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([['testpeer', peer]]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config);
+    const result = await service.sendMessage({
+      peerName: 'testpeer',
+      type: 'publish',
+      payload: { text: 'direct' },
+      direct: true,
+    });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(mockFetch.mock.callCount(), 1);
+  });
+
+  it('should fail with --direct when peer URL is unreachable (no relay fallback)', async () => {
+    const mockFetch = mock.fn(async () => {
+      throw new Error('Connection refused');
+    });
+    // @ts-expect-error - replacing global fetch
+    globalThis.fetch = mockFetch;
+
+    const relayClient = createMockRelayClient();
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const peer: PeerConfig = {
+      publicKey: peerIdentity.publicKey,
+      url: 'http://localhost:18790/hooks',
+      token: 'test-token',
+    };
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([['testpeer', peer]]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.sendMessage({
+      peerName: 'testpeer',
+      type: 'publish',
+      payload: { text: 'direct fail' },
+      direct: true,
+    });
+
+    assert.strictEqual(result.ok, false);
+    assert.ok(result.error?.includes('Direct send'));
+    // Should NOT have used relay
+    assert.strictEqual((relayClient.send as ReturnType<typeof mock.fn>).mock.callCount(), 0);
+  });
+
+  it('should fail with --direct when peer has no URL configured', async () => {
+    const peer: PeerConfig = {
+      publicKey: peerIdentity.publicKey,
+      // no url
+    };
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([['testpeer', peer]]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config);
+    const result = await service.sendMessage({
+      peerName: 'testpeer',
+      type: 'publish',
+      payload: { text: 'no url' },
+      direct: true,
+    });
+
+    assert.strictEqual(result.ok, false);
+    assert.ok(result.error?.includes('no URL configured'));
+  });
+
+  it('should skip HTTP and use relay with --relay-only', async () => {
+    const mockFetch = mock.fn(async () =>
+      new Response(null, { status: 200, statusText: 'OK' })
+    );
+    // @ts-expect-error - replacing global fetch
+    globalThis.fetch = mockFetch;
+
+    const relayClient = createMockRelayClient();
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const peer: PeerConfig = {
+      publicKey: peerIdentity.publicKey,
+      url: 'http://localhost:18790/hooks',
+      token: 'test-token',
+    };
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([['testpeer', peer]]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.sendMessage({
+      peerName: 'testpeer',
+      type: 'publish',
+      payload: { text: 'relay only' },
+      relayOnly: true,
+    });
+
+    assert.strictEqual(result.ok, true);
+    // HTTP should NOT have been called
+    assert.strictEqual(mockFetch.mock.callCount(), 0);
+    // Relay should have been called
+    assert.strictEqual((relayClient.send as ReturnType<typeof mock.fn>).mock.callCount(), 1);
   });
 });
