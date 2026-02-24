@@ -1,0 +1,34 @@
+[Unit]
+Description=Agora Relay Server
+After=network.target
+
+[Service]
+Type=simple
+User=agora
+WorkingDirectory=/opt/agora-relay
+ExecStart=/usr/bin/node dist/relay/relay-server.js
+Restart=always
+RestartSec=5
+
+# Core configuration
+Environment=NODE_ENV=production
+Environment=REST_PORT=3001
+Environment=RELAY_PORT=3002
+
+# Uncomment and set a stable secret so sessions survive service restarts:
+# Environment=JWT_SECRET=change-me-to-a-long-random-string
+
+# Optional tuning
+# Environment=MAX_PEERS=100
+# Environment=MESSAGE_TTL_MS=86400000
+# Environment=RATE_LIMIT_RPM=60
+# Environment=ALLOWED_ORIGINS=*
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/agora-relay
+
+[Install]
+WantedBy=multi-user.target
