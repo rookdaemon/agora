@@ -399,7 +399,7 @@ async function handlePeersDiscover(
 /**
  * Handle the `agora send` command.
  */
-async function handleSend(args: string[], options: CliOptions & { type?: string; payload?: string }): Promise<void> {
+async function handleSend(args: string[], options: CliOptions & { type?: string; payload?: string; direct?: boolean; 'relay-only'?: boolean }): Promise<void> {
   if (args.length < 1) {
     console.error('Error: Missing peer name. Usage: agora send <name> <message> OR agora send <name> --type <type> --payload <json>');
     process.exit(1);
@@ -449,20 +449,34 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
     messagePayload = { text: args.slice(1).join(' ') };
   }
 
-  // Determine transport method: HTTP or relay
-  const hasHttpTransport = peer.url && peer.token;
+  const isDirect = options.direct === true;
+  const isRelayOnly = options['relay-only'] === true;
+
+  // Validate flag combination
+  if (isDirect && isRelayOnly) {
+    console.error('Error: --direct and --relay-only are mutually exclusive.');
+    process.exit(1);
+  }
+
+  // --direct requires the peer to have a URL
+  if (isDirect && !peer.url) {
+    console.error(`Error: --direct requested but peer '${name}' has no URL configured.`);
+    process.exit(1);
+  }
+
+  // Whether to attempt HTTP transport for this send
+  const shouldTryHttp = peer.url && !isRelayOnly;
   const hasRelay = config.relay;
 
   // Send the message
   try {
-    if (hasHttpTransport) {
-      // Use HTTP transport (existing behavior)
-      // Non-null assertion: we know url and token are strings here
+    if (shouldTryHttp) {
+      // Use HTTP transport
       const transportConfig = {
         identity: config.identity,
         peers: new Map<string, PeerConfig>([[peer.publicKey, {
           url: peer.url!,
-          token: peer.token!,
+          token: peer.token,
           publicKey: peer.publicKey,
         }]]),
       };
@@ -482,7 +496,12 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
           transport: 'http',
           httpStatus: result.status
         }, options.pretty || false);
-      } else {
+        return;
+      }
+
+      // HTTP failed
+      if (isDirect) {
+        // --direct: do not fall back to relay
         output({ 
           status: 'failed',
           peer: name,
@@ -493,21 +512,36 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
         }, options.pretty || false);
         process.exit(1);
       }
-      } else if (hasRelay && config.relay) {
-        // Use relay transport
-        // Extract URL from relay (string or object)
-        const relayUrl = typeof config.relay === 'string' ? config.relay : config.relay.url;
-        const relayConfig = {
-          identity: config.identity,
-          relayUrl,
-        };
 
-        const result = await sendViaRelay(
-          relayConfig,
-          peer.publicKey,
-          messageType,
-          messagePayload
-        );
+      // Fall through to relay if available
+      if (!hasRelay || !config.relay) {
+        output({ 
+          status: 'failed',
+          peer: name,
+          type: messageType,
+          transport: 'http',
+          httpStatus: result.status,
+          error: result.error
+        }, options.pretty || false);
+        process.exit(1);
+      }
+    }
+
+    // Use relay transport (relay-only mode, or HTTP failed with relay available, or no URL)
+    if (hasRelay && config.relay) {
+      // Extract URL from relay (string or object)
+      const relayUrl = typeof config.relay === 'string' ? config.relay : config.relay.url;
+      const relayConfig = {
+        identity: config.identity,
+        relayUrl,
+      };
+
+      const result = await sendViaRelay(
+        relayConfig,
+        peer.publicKey,
+        messageType,
+        messagePayload
+      );
 
       if (result.ok) {
         output({ 
@@ -526,7 +560,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
         }, options.pretty || false);
         process.exit(1);
       }
-    } else {
+    } else if (!shouldTryHttp) {
       // Neither HTTP nor relay available
       console.error(`Error: Peer '${name}' unreachable. No HTTP endpoint and no relay configured.`);
       process.exit(1);
@@ -1327,6 +1361,8 @@ async function main(): Promise<void> {
       'commit-id': { type: 'string' },
       outcome: { type: 'string' },
       agent: { type: 'string' },
+      direct: { type: 'boolean' },
+      'relay-only': { type: 'boolean' },
     },
     strict: false,
     allowPositionals: true,
@@ -1362,6 +1398,8 @@ async function main(): Promise<void> {
     expiry?: string;
     'commit-id'?: string;
     agent?: string;
+    direct?: boolean;
+    'relay-only'?: boolean;
   } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
@@ -1390,6 +1428,8 @@ async function main(): Promise<void> {
     'commit-id': typeof parsed.values['commit-id'] === 'string' ? parsed.values['commit-id'] : undefined,
     outcome: typeof parsed.values.outcome === 'string' ? parsed.values.outcome : undefined,
     agent: typeof parsed.values.agent === 'string' ? parsed.values.agent : undefined,
+    direct: typeof parsed.values.direct === 'boolean' ? parsed.values.direct : undefined,
+    'relay-only': typeof parsed.values['relay-only'] === 'boolean' ? parsed.values['relay-only'] : undefined,
   };
 
   try {

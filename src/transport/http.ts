@@ -61,29 +61,44 @@ export async function sendToPeer(
     deliver: false,
   };
 
-  // Send HTTP POST
-  try {
-    const response = await fetch(`${peer.url}/agent`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${peer.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(webhookPayload),
-    });
-
-    return {
-      ok: response.ok,
-      status: response.status,
-      error: response.ok ? undefined : await response.text(),
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      status: 0,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  // Build headers — only include Authorization when a token is configured
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (peer.token) {
+    headers['Authorization'] = `Bearer ${peer.token}`;
   }
+
+  const requestBody = JSON.stringify(webhookPayload);
+
+  // Send HTTP POST (retry once on network error, not on 4xx/5xx)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(`${peer.url}/agent`, {
+        method: 'POST',
+        headers,
+        body: requestBody,
+      });
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        error: response.ok ? undefined : await response.text(),
+      };
+    } catch (err) {
+      if (attempt === 1) {
+        return {
+          ok: false,
+          status: 0,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+      // First attempt failed with network error — retry once
+    }
+  }
+
+  // Unreachable, but satisfies TypeScript
+  return { ok: false, status: 0, error: 'Unexpected send failure' };
 }
 
 /**

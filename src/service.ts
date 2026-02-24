@@ -22,6 +22,10 @@ export interface SendMessageOptions {
   type: MessageType;
   payload: unknown;
   inReplyTo?: string;
+  /** Skip relay, send directly via HTTP only. Fails if peer has no URL or is unreachable. */
+  direct?: boolean;
+  /** Skip direct HTTP, always use relay even if peer has a URL. */
+  relayOnly?: boolean;
 }
 
 export interface SendMessageResult {
@@ -98,8 +102,8 @@ export class AgoraService {
       };
     }
 
-    // Try HTTP first (only if peer has a webhook URL)
-    if (peer.url) {
+    // Try HTTP first (only if peer has a webhook URL and --relay-only not set)
+    if (peer.url && !options.relayOnly) {
       const transportConfig = {
         identity: {
           publicKey: this.config.identity.publicKey,
@@ -121,6 +125,22 @@ export class AgoraService {
       }
 
       this.logger?.debug(`HTTP send to ${options.peerName} failed: ${httpResult.error}`);
+
+      // --direct flag: do not fall back to relay
+      if (options.direct) {
+        return {
+          ok: false,
+          status: httpResult.status,
+          error: `Direct send to ${options.peerName} failed: ${httpResult.error}`,
+        };
+      }
+    } else if (options.direct && !peer.url) {
+      // --direct requested but peer has no URL configured
+      return {
+        ok: false,
+        status: 0,
+        error: `Direct send failed: peer '${options.peerName}' has no URL configured`,
+      };
     }
 
     // Fall back to relay
