@@ -20,9 +20,9 @@ import {
 } from './jwt-auth';
 import { MessageBuffer, type BufferedMessage } from './message-buffer';
 
-const apiRateLimit = rateLimit({
+const apiRateLimit = (rpm: number): ReturnType<typeof rateLimit> => rateLimit({
   windowMs: 60_000,
-  limit: 60,
+  limit: rpm,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Too many requests — try again later' },
@@ -111,10 +111,11 @@ export function createRestRouter(
   buffer: MessageBuffer,
   sessions: Map<string, RestSession>,
   createEnv: CreateEnvelopeFn,
-  verifyEnv: VerifyEnvelopeFn
+  verifyEnv: VerifyEnvelopeFn,
+  rateLimitRpm = 60
 ): Router {
   const router = Router();
-  router.use(apiRateLimit);
+  router.use(apiRateLimit(rateLimitRpm));
 
   relay.on('message-relayed', (from, to, envelope) => {
     if (!sessions.has(to)) return;

@@ -15,14 +15,25 @@ export interface BufferedMessage {
   inReplyTo?: string;
 }
 
+interface StoredMessage {
+  message: BufferedMessage;
+  receivedAt: number;
+}
+
 const MAX_MESSAGES_PER_AGENT = 100;
 
 /**
  * MessageBuffer stores inbound messages per agent public key.
  * FIFO eviction when the buffer is full (max 100 messages).
+ * Messages older than ttlMs (measured from when they were received) are pruned on access.
  */
 export class MessageBuffer {
-  private buffers: Map<string, BufferedMessage[]> = new Map();
+  private buffers: Map<string, StoredMessage[]> = new Map();
+  private ttlMs: number;
+
+  constructor(options?: { ttlMs?: number }) {
+    this.ttlMs = options?.ttlMs ?? 86400000; // default 24h
+  }
 
   /**
    * Add a message to an agent's buffer.
@@ -34,7 +45,7 @@ export class MessageBuffer {
       queue = [];
       this.buffers.set(publicKey, queue);
     }
-    queue.push(message);
+    queue.push({ message, receivedAt: Date.now() });
     if (queue.length > MAX_MESSAGES_PER_AGENT) {
       queue.shift(); // FIFO eviction
     }
@@ -42,14 +53,19 @@ export class MessageBuffer {
 
   /**
    * Retrieve messages for an agent, optionally filtering by `since` timestamp.
-   * Returns messages with timestamp > since (exclusive).
+   * Returns messages with timestamp > since (exclusive). Prunes expired messages.
    */
   get(publicKey: string, since?: number): BufferedMessage[] {
-    const queue = this.buffers.get(publicKey) ?? [];
+    const now = Date.now();
+    let queue = this.buffers.get(publicKey) ?? [];
+    // Prune messages older than ttlMs (based on wall-clock receive time)
+    queue = queue.filter((s) => now - s.receivedAt < this.ttlMs);
+    this.buffers.set(publicKey, queue);
+    const messages = queue.map((s) => s.message);
     if (since === undefined) {
-      return [...queue];
+      return [...messages];
     }
-    return queue.filter((m) => m.timestamp > since);
+    return messages.filter((m) => m.timestamp > since);
   }
 
   /**

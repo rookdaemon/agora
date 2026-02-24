@@ -47,6 +47,8 @@ export interface RelayServerOptions {
   storagePeers?: string[];
   /** Directory for persisting messages for storage peers */
   storageDir?: string;
+  /** Maximum number of concurrent registered peers (default: 100) */
+  maxPeers?: number;
 }
 
 export class RelayServer extends EventEmitter {
@@ -55,6 +57,7 @@ export class RelayServer extends EventEmitter {
   private identity?: { publicKey: string; privateKey: string };
   private storagePeers: string[] = [];
   private store: MessageStore | null = null;
+  private maxPeers: number = 100;
 
   constructor(options?: { publicKey: string; privateKey: string } | RelayServerOptions) {
     super();
@@ -68,6 +71,9 @@ export class RelayServer extends EventEmitter {
       if (opts.storagePeers?.length && opts.storageDir) {
         this.storagePeers = opts.storagePeers;
         this.store = new MessageStore(opts.storageDir);
+      }
+      if (opts.maxPeers !== undefined) {
+        this.maxPeers = opts.maxPeers;
       }
     }
   }
@@ -167,6 +173,10 @@ export class RelayServer extends EventEmitter {
           const existing = this.agents.get(publicKey);
           if (existing) {
             existing.socket.close();
+          } else if (this.agents.size >= this.maxPeers) {
+            this.sendError(socket, `Relay is at capacity (max ${this.maxPeers} peers)`);
+            socket.close();
+            return;
           }
 
           const agent: ConnectedAgent = {

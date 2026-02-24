@@ -1,0 +1,18 @@
+services:
+  agora-relay:
+    image: rookdaemon/agora-relay
+    build: .
+    ports:
+      - "3001:3001"  # REST API
+      - "3002:3002"  # WebSocket relay
+    environment:
+      - NODE_ENV=production
+      - REST_PORT=3001
+      - RELAY_PORT=3002
+      - MAX_PEERS=100
+      - MESSAGE_TTL_MS=86400000
+      - RATE_LIMIT_RPM=60
+      - ALLOWED_ORIGINS=*
+      # Uncomment and set a stable secret so sessions survive restarts:
+      # - JWT_SECRET=change-me-to-a-long-random-string
+    restart: unless-stopped
