@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=agora
 WorkingDirectory=/opt/agora-relay
-ExecStart=/usr/bin/node dist/relay-server.js
+ExecStart=/usr/bin/node dist/relay/relay-server.js
 Restart=always
 RestartSec=5
 
