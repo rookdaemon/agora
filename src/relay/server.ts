@@ -29,6 +29,8 @@ interface ConnectedAgent {
 export interface RelayServerEvents {
   'agent-registered': (publicKey: string) => void;
   'agent-disconnected': (publicKey: string) => void;
+  /** Emitted when a session disconnects (same as agent-disconnected for compatibility) */
+  'disconnection': (publicKey: string) => void;
   'message-relayed': (from: string, to: string, envelope: Envelope) => void;
   'error': (error: Error) => void;
 }
@@ -53,7 +55,8 @@ export interface RelayServerOptions {
 
 export class RelayServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
-  private agents = new Map<string, ConnectedAgent>();
+  /** publicKey -> sessionId -> ConnectedAgent (multiple sessions per key) */
+  private sessions = new Map<string, Map<string, ConnectedAgent>>();
   private identity?: { publicKey: string; privateKey: string };
   private storagePeers: string[] = [];
   private store: MessageStore | null = null;
@@ -123,11 +126,13 @@ export class RelayServer extends EventEmitter {
         return;
       }
 
-      // Close all agent connections
-      for (const agent of this.agents.values()) {
-        agent.socket.close();
+      // Close all agent connections (all sessions)
+      for (const sessionMap of this.sessions.values()) {
+        for (const agent of sessionMap.values()) {
+          agent.socket.close();
+        }
       }
-      this.agents.clear();
+      this.sessions.clear();
 
       this.wss.close((err) => {
         if (err) {
@@ -141,10 +146,15 @@ export class RelayServer extends EventEmitter {
   }
 
   /**
-   * Get all connected agents
+   * Get one connected agent per public key (first session). For backward compatibility.
    */
   getAgents(): Map<string, ConnectedAgent> {
-    return new Map(this.agents);
+    const out = new Map<string, ConnectedAgent>();
+    for (const [key, sessionMap] of this.sessions) {
+      const first = sessionMap.values().next().value;
+      if (first) out.set(key, first);
+    }
+    return out;
   }
 
   /**
@@ -152,6 +162,7 @@ export class RelayServer extends EventEmitter {
    */
   private handleConnection(socket: WebSocket): void {
     let agentPublicKey: string | null = null;
+    let sessionId: string | null = null;
 
     socket.on('message', (data: Buffer) => {
       try {
@@ -168,12 +179,10 @@ export class RelayServer extends EventEmitter {
           const publicKey = msg.publicKey;
           const name = msg.name;
           agentPublicKey = publicKey;
+          sessionId = crypto.randomUUID();
 
-          // If this pubkey was already connected, close the old connection
-          const existing = this.agents.get(publicKey);
-          if (existing) {
-            existing.socket.close();
-          } else if (this.agents.size >= this.maxPeers) {
+          // Allow multiple sessions per publicKey; only enforce max unique peers
+          if (!this.sessions.has(publicKey) && this.sessions.size >= this.maxPeers) {
             this.sendError(socket, `Relay is at capacity (max ${this.maxPeers} peers)`);
             socket.close();
             return;
@@ -186,15 +195,23 @@ export class RelayServer extends EventEmitter {
             lastSeen: Date.now(),
           };
 
-          this.agents.set(publicKey, agent);
+          if (!this.sessions.has(publicKey)) {
+            this.sessions.set(publicKey, new Map());
+          }
+          this.sessions.get(publicKey)!.set(sessionId, agent);
+          const isFirstSession = this.sessions.get(publicKey)!.size === 1;
+
           this.emit('agent-registered', publicKey);
 
-          // Build peers list: connected agents + storage peers (always considered "connected" for store-and-forward)
-          let peers = Array.from(this.agents.values())
-            .filter(a => a.publicKey !== publicKey)
-            .map(a => ({ publicKey: a.publicKey, name: a.name }));
+          // Build peers list: one entry per connected publicKey + storage peers
+          const peers: Array<{ publicKey: string; name?: string }> = [];
+          for (const [key, sessionMap] of this.sessions) {
+            if (key === publicKey) continue;
+            const firstAgent = sessionMap.values().next().value;
+            peers.push({ publicKey: key, name: firstAgent?.name });
+          }
           for (const storagePeer of this.storagePeers) {
-            if (storagePeer !== publicKey && !this.agents.has(storagePeer)) {
+            if (storagePeer !== publicKey && !this.sessions.has(storagePeer)) {
               peers.push({ publicKey: storagePeer, name: undefined });
             }
           }
@@ -202,11 +219,14 @@ export class RelayServer extends EventEmitter {
           socket.send(JSON.stringify({
             type: 'registered',
             publicKey,
+            sessionId,
             peers,
           }));
 
-          // Notify other agents that this agent is now online
-          this.broadcastPeerEvent('peer_online', publicKey, name);
+          // Notify other agents only when this is the first session for this peer
+          if (isFirstSession) {
+            this.broadcastPeerEvent('peer_online', publicKey, name);
+          }
 
           // Deliver any stored messages for this peer
           if (this.store && this.storagePeers.includes(publicKey)) {
@@ -258,10 +278,12 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          // Update lastSeen timestamp
-          const senderAgent = this.agents.get(agentPublicKey);
-          if (senderAgent) {
-            senderAgent.lastSeen = Date.now();
+          // Update lastSeen for any session of sender
+          const senderSessionMap = this.sessions.get(agentPublicKey);
+          if (senderSessionMap) {
+            for (const a of senderSessionMap.values()) {
+              a.lastSeen = Date.now();
+            }
           }
 
           // Handle peer_list_request directed at relay
@@ -270,12 +292,16 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          // Find recipient
-          const recipient = this.agents.get(msg.to);
-          if (!recipient || recipient.socket.readyState !== WebSocket.OPEN) {
+          // Find all recipient sessions
+          const recipientSessionMap = this.sessions.get(msg.to);
+          const openRecipients = recipientSessionMap
+            ? Array.from(recipientSessionMap.values()).filter(a => a.socket.readyState === WebSocket.OPEN)
+            : [];
+          if (openRecipients.length === 0) {
             // If recipient is a storage peer, queue the message
             if (this.store && this.storagePeers.includes(msg.to)) {
-              const senderAgent = this.agents.get(agentPublicKey);
+              const senderSessionMap = this.sessions.get(agentPublicKey);
+              const senderAgent = senderSessionMap?.values().next().value;
               this.store.save(msg.to, {
                 from: agentPublicKey,
                 name: senderAgent?.name,
@@ -283,21 +309,25 @@ export class RelayServer extends EventEmitter {
               });
               this.emit('message-relayed', agentPublicKey, msg.to, envelope);
             } else {
-              this.sendError(socket, 'Recipient not connected');
+              this.sendError(socket, 'Recipient not connected', 'unknown_recipient');
             }
             return;
           }
 
-          // Forward envelope to recipient wrapped in relay message format
+          // Forward envelope to all sessions of the recipient
           try {
-            const senderAgent = this.agents.get(agentPublicKey);
+            const senderSessionMap = this.sessions.get(agentPublicKey);
+            const senderAgent = senderSessionMap?.values().next().value;
             const relayMessage = {
               type: 'message',
               from: agentPublicKey,
               name: senderAgent?.name,
               envelope,
             };
-            recipient.socket.send(JSON.stringify(relayMessage));
+            const messageStr = JSON.stringify(relayMessage);
+            for (const recipient of openRecipients) {
+              recipient.socket.send(messageStr);
+            }
             this.emit('message-relayed', agentPublicKey, msg.to, envelope);
           } catch (err) {
             this.sendError(socket, 'Failed to relay message');
@@ -326,13 +356,16 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          // Update lastSeen timestamp
-          const senderAgentBroadcast = this.agents.get(agentPublicKey);
-          if (senderAgentBroadcast) {
-            senderAgentBroadcast.lastSeen = Date.now();
+          // Update lastSeen for any session of sender
+          const senderSessionMap = this.sessions.get(agentPublicKey);
+          if (senderSessionMap) {
+            for (const a of senderSessionMap.values()) {
+              a.lastSeen = Date.now();
+            }
           }
 
-          const senderAgent = this.agents.get(agentPublicKey);
+          const senderSessionMapForName = this.sessions.get(agentPublicKey);
+          const senderAgent = senderSessionMapForName?.values().next().value;
           const relayMessage = {
             type: 'message' as const,
             from: agentPublicKey,
@@ -341,12 +374,15 @@ export class RelayServer extends EventEmitter {
           };
           const messageStr = JSON.stringify(relayMessage);
 
-          for (const agent of this.agents.values()) {
-            if (agent.publicKey !== agentPublicKey && agent.socket.readyState === WebSocket.OPEN) {
-              try {
-                agent.socket.send(messageStr);
-              } catch (err) {
-                this.emit('error', err as Error);
+          for (const [key, sessionMap] of this.sessions) {
+            if (key === agentPublicKey) continue;
+            for (const agent of sessionMap.values()) {
+              if (agent.socket.readyState === WebSocket.OPEN) {
+                try {
+                  agent.socket.send(messageStr);
+                } catch (err) {
+                  this.emit('error', err as Error);
+                }
               }
             }
           }
@@ -369,14 +405,21 @@ export class RelayServer extends EventEmitter {
     });
 
     socket.on('close', () => {
-      if (agentPublicKey) {
-        const agent = this.agents.get(agentPublicKey);
-        const agentName = agent?.name;
-        this.agents.delete(agentPublicKey);
-        this.emit('agent-disconnected', agentPublicKey);
-        // Storage-enabled peers are always considered connected; skip peer_offline for them
-        if (!this.storagePeers.includes(agentPublicKey)) {
-          this.broadcastPeerEvent('peer_offline', agentPublicKey, agentName);
+      if (agentPublicKey && sessionId) {
+        const sessionMap = this.sessions.get(agentPublicKey);
+        if (sessionMap) {
+          const agent = sessionMap.get(sessionId);
+          const agentName = agent?.name;
+          sessionMap.delete(sessionId);
+          if (sessionMap.size === 0) {
+            this.sessions.delete(agentPublicKey);
+            this.emit('agent-disconnected', agentPublicKey);
+            this.emit('disconnection', agentPublicKey);
+            // Storage-enabled peers are always considered connected; skip peer_offline for them
+            if (!this.storagePeers.includes(agentPublicKey)) {
+              this.broadcastPeerEvent('peer_offline', agentPublicKey, agentName);
+            }
+          }
         }
       }
     });
@@ -389,10 +432,12 @@ export class RelayServer extends EventEmitter {
   /**
    * Send an error message to a client
    */
-  private sendError(socket: WebSocket, message: string): void {
+  private sendError(socket: WebSocket, message: string, code?: string): void {
     try {
       if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'error', message }));
+        const payload: { type: 'error'; message: string; code?: string } = { type: 'error', message };
+        if (code) payload.code = code;
+        socket.send(JSON.stringify(payload));
       }
     } catch (err) {
       // Log errors when sending error messages, but don't propagate to avoid cascading failures
@@ -401,7 +446,7 @@ export class RelayServer extends EventEmitter {
   }
 
   /**
-   * Broadcast a peer event to all connected agents
+   * Broadcast a peer event to all connected agents (all sessions except the one for publicKey)
    */
   private broadcastPeerEvent(eventType: 'peer_online' | 'peer_offline', publicKey: string, name?: string): void {
     const message = {
@@ -411,13 +456,15 @@ export class RelayServer extends EventEmitter {
     };
     const messageStr = JSON.stringify(message);
 
-    for (const agent of this.agents.values()) {
-      // Don't send the event to the agent it's about
-      if (agent.publicKey !== publicKey && agent.socket.readyState === WebSocket.OPEN) {
-        try {
-          agent.socket.send(messageStr);
-        } catch (err) {
-          this.emit('error', new Error(`Failed to send ${eventType} event: ${err instanceof Error ? err.message : String(err)}`));
+    for (const [key, sessionMap] of this.sessions) {
+      if (key === publicKey) continue;
+      for (const agent of sessionMap.values()) {
+        if (agent.socket.readyState === WebSocket.OPEN) {
+          try {
+            agent.socket.send(messageStr);
+          } catch (err) {
+            this.emit('error', new Error(`Failed to send ${eventType} event: ${err instanceof Error ? err.message : String(err)}`));
+          }
         }
       }
     }
@@ -435,10 +482,15 @@ export class RelayServer extends EventEmitter {
     const { filters } = envelope.payload;
     const now = Date.now();
 
-    let peers = Array.from(this.agents.values());
+    // One entry per publicKey (first session for lastSeen/metadata)
+    const peersList: ConnectedAgent[] = [];
+    for (const [key, sessionMap] of this.sessions) {
+      if (key === requesterPublicKey) continue;
+      const first = sessionMap.values().next().value;
+      if (first) peersList.push(first);
+    }
 
-    // Filter out requester first
-    peers = peers.filter(p => p.publicKey !== requesterPublicKey);
+    let peers = peersList;
 
     // Apply filters
     if (filters?.activeWithin) {
@@ -460,7 +512,7 @@ export class RelayServer extends EventEmitter {
           } : undefined,
           lastSeen: p.lastSeen,
         })),
-      totalPeers: this.agents.size - 1, // Exclude requester from count
+      totalPeers: this.sessions.size - (this.sessions.has(requesterPublicKey) ? 1 : 0),
       relayPublicKey: this.identity.publicKey,
     };
 
