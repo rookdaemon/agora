@@ -34,6 +34,17 @@ export interface SendMessageResult {
   error?: string;
 }
 
+export interface ReplyToEnvelopeOptions {
+  /** The public key of the target (from envelope.sender) */
+  targetPubkey: string;
+  /** Message type for the reply */
+  type: MessageType;
+  /** Reply payload */
+  payload: unknown;
+  /** The envelope ID being replied to (required — this IS a reply) */
+  inReplyTo: string;
+}
+
 export interface DecodeInboundResult {
   ok: boolean;
   envelope?: Envelope;
@@ -171,6 +182,43 @@ export class AgoraService {
       error: peer.url
         ? `HTTP send failed and relay not available for peer: ${options.peerName}`
         : `No webhook URL and relay not available for peer: ${options.peerName}`,
+    };
+  }
+
+  /**
+   * Reply to an envelope from any sender via relay.
+   * Unlike sendMessage(), this does NOT require the target to be a configured peer.
+   * Uses the target's public key directly — relay-only (no HTTP, since unknown peers have no URL).
+   */
+  async replyToEnvelope(options: ReplyToEnvelopeOptions): Promise<SendMessageResult> {
+    if (!this.relayClient?.connected() || !this.config.relay) {
+      return {
+        ok: false,
+        status: 0,
+        error: 'Relay not connected — cannot reply to envelope without relay',
+      };
+    }
+
+    this.logger?.debug(
+      `Replying to envelope via relay: target=${shortKey(options.targetPubkey)} type=${options.type} inReplyTo=${options.inReplyTo}`
+    );
+
+    const relayResult = await sendViaRelay(
+      {
+        identity: this.config.identity,
+        relayUrl: this.config.relay.url,
+        relayClient: this.relayClient,
+      },
+      options.targetPubkey,
+      options.type,
+      options.payload,
+      options.inReplyTo
+    );
+
+    return {
+      ok: relayResult.ok,
+      status: 0,
+      error: relayResult.error,
     };
   }
 
