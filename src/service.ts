@@ -40,8 +40,11 @@ export interface DecodeInboundResult {
   reason?: string;
 }
 
-export type RelayMessageHandler = (envelope: Envelope) => void;
+/** Handler for relay messages. (envelope, fromPublicKey, fromName?) */
 export type RelayMessageHandlerWithName = (envelope: Envelope, from: string, fromName?: string) => void;
+
+/** @deprecated Use RelayMessageHandlerWithName. Kept for backward compatibility. */
+export type RelayMessageHandler = (envelope: Envelope) => void;
 
 export interface Logger {
   debug(message: string): void;
@@ -73,17 +76,24 @@ export interface RelayClientFactory {
 export class AgoraService {
   private config: AgoraServiceConfig;
   private relayClient: RelayClientLike | null = null;
-  private relayMessageHandler: RelayMessageHandler | null = null;
-  private relayMessageHandlerWithName: RelayMessageHandlerWithName | null = null;
+  private readonly onRelayMessage: RelayMessageHandlerWithName;
   private logger: Logger | null;
   private relayClientFactory: RelayClientFactory | null;
 
+  /**
+   * @param config - Service config (identity, peers, optional relay)
+   * @param onRelayMessage - Required callback for relay messages. Ensures no messages are lost between init and connect.
+   * @param logger - Optional debug logger
+   * @param relayClientFactory - Optional factory for relay client (for testing)
+   */
   constructor(
     config: AgoraServiceConfig,
+    onRelayMessage: RelayMessageHandlerWithName,
     logger?: Logger,
     relayClientFactory?: RelayClientFactory
   ) {
     this.config = config;
+    this.onRelayMessage = onRelayMessage;
     this.logger = logger ?? null;
     this.relayClientFactory = relayClientFactory ?? null;
   }
@@ -231,11 +241,7 @@ export class AgoraService {
     });
 
     this.relayClient.on('message', (envelope: Envelope, from: string, fromName?: string) => {
-      if (this.relayMessageHandlerWithName) {
-        this.relayMessageHandlerWithName(envelope, from, fromName);
-      } else if (this.relayMessageHandler) {
-        this.relayMessageHandler(envelope);
-      }
+      this.onRelayMessage(envelope, from, fromName);
     });
 
     try {
@@ -245,16 +251,6 @@ export class AgoraService {
       this.logger?.debug(`Agora relay connect failed (${url}): ${message}`);
       this.relayClient = null;
     }
-  }
-
-  setRelayMessageHandler(handler: RelayMessageHandler): void {
-    this.relayMessageHandler = handler;
-    this.relayMessageHandlerWithName = null;
-  }
-
-  setRelayMessageHandlerWithName(handler: RelayMessageHandlerWithName): void {
-    this.relayMessageHandlerWithName = handler;
-    this.relayMessageHandler = null;
   }
 
   async disconnectRelay(): Promise<void> {

@@ -56,7 +56,7 @@ describe('AgoraService.sendMessage', () => {
       peers: new Map([['testpeer', peer]]),
     };
 
-    const service = new AgoraService(config);
+    const service = new AgoraService(config, () => {});
     const result = await service.sendMessage({
       peerName: 'testpeer',
       type: 'publish',
@@ -84,7 +84,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.sendMessage({
@@ -120,7 +120,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.sendMessage({
@@ -160,7 +160,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.sendMessage({
@@ -184,7 +184,7 @@ describe('AgoraService.sendMessage', () => {
       peers: new Map([['stefan', peer]]),
     };
 
-    const service = new AgoraService(config);
+    const service = new AgoraService(config, () => {});
 
     const result = await service.sendMessage({
       peerName: 'stefan',
@@ -202,7 +202,7 @@ describe('AgoraService.sendMessage', () => {
       peers: new Map(),
     };
 
-    const service = new AgoraService(config);
+    const service = new AgoraService(config, () => {});
 
     const result = await service.sendMessage({
       peerName: 'nonexistent',
@@ -233,7 +233,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config);
+    const service = new AgoraService(config, () => {});
     const result = await service.sendMessage({
       peerName: 'testpeer',
       type: 'publish',
@@ -267,7 +267,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.sendMessage({
@@ -295,7 +295,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config);
+    const service = new AgoraService(config, () => {});
     const result = await service.sendMessage({
       peerName: 'testpeer',
       type: 'publish',
@@ -329,7 +329,7 @@ describe('AgoraService.sendMessage', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.sendMessage({
