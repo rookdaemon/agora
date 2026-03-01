@@ -346,3 +346,136 @@ describe('AgoraService.sendMessage', () => {
     assert.strictEqual((relayClient.send as ReturnType<typeof mock.fn>).mock.callCount(), 1);
   });
 });
+
+describe('AgoraService.replyToEnvelope', () => {
+  const identity = generateKeyPair();
+  const unknownPeerIdentity = generateKeyPair();
+
+  it('should send via relay when connected', async () => {
+    const relayClient = createMockRelayClient();
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map(), // empty — target is NOT a configured peer
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.replyToEnvelope({
+      targetPubkey: unknownPeerIdentity.publicKey,
+      type: 'publish',
+      payload: { text: 'hello stranger' },
+      inReplyTo: 'envelope-abc-123',
+    });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual((relayClient.send as ReturnType<typeof mock.fn>).mock.callCount(), 1);
+
+    // Verify the relay was called with the correct target pubkey
+    const sendCall = (relayClient.send as ReturnType<typeof mock.fn>).mock.calls[0];
+    assert.strictEqual(sendCall.arguments[0], unknownPeerIdentity.publicKey);
+  });
+
+  it('should fail when relay is not connected', async () => {
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map(),
+      // no relay configured
+    };
+
+    const service = new AgoraService(config);
+
+    const result = await service.replyToEnvelope({
+      targetPubkey: unknownPeerIdentity.publicKey,
+      type: 'publish',
+      payload: { text: 'hello' },
+      inReplyTo: 'envelope-abc-123',
+    });
+
+    assert.strictEqual(result.ok, false);
+    assert.ok(result.error?.includes('Relay not connected'));
+  });
+
+  it('should work with arbitrary pubkey not in peers map', async () => {
+    const randomPubkey = generateKeyPair().publicKey;
+    const relayClient = createMockRelayClient();
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([['known-peer', { publicKey: 'some-other-key' }]]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.replyToEnvelope({
+      targetPubkey: randomPubkey,
+      type: 'publish',
+      payload: { text: 'to an unknown peer' },
+      inReplyTo: 'envelope-xyz',
+    });
+
+    assert.strictEqual(result.ok, true);
+    const sendCall = (relayClient.send as ReturnType<typeof mock.fn>).mock.calls[0];
+    assert.strictEqual(sendCall.arguments[0], randomPubkey);
+  });
+
+  it('should propagate relay send errors', async () => {
+    const relayClient = createMockRelayClient({
+      connected: true,
+      sendResult: { ok: false, error: 'Recipient not connected' },
+    });
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map(),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.replyToEnvelope({
+      targetPubkey: unknownPeerIdentity.publicKey,
+      type: 'publish',
+      payload: { text: 'will fail' },
+      inReplyTo: 'envelope-fail',
+    });
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, 'Recipient not connected');
+  });
+
+  it('should set inReplyTo on the created envelope', async () => {
+    const relayClient = createMockRelayClient();
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map(),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    await service.replyToEnvelope({
+      targetPubkey: unknownPeerIdentity.publicKey,
+      type: 'publish',
+      payload: { text: 'reply' },
+      inReplyTo: 'original-envelope-id-999',
+    });
+
+    // The envelope passed to relay.send should have inReplyTo set
+    const sendCall = (relayClient.send as ReturnType<typeof mock.fn>).mock.calls[0];
+    const envelope = sendCall.arguments[1];
+    assert.strictEqual(envelope.inReplyTo, 'original-envelope-id-999');
+  });
+});
