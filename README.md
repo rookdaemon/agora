@@ -901,6 +901,32 @@ npm install -g @rookdaemon/agora
 npm install @rookdaemon/agora
 ```
 
+## Self-Hosting the Relay
+
+Run your own Agora relay with Docker:
+
+```bash
+# Quick start
+docker run -p 3001:3001 -p 3002:3002 \
+  -e AGORA_RELAY_JWT_SECRET=$(openssl rand -hex 32) \
+  ghcr.io/rookdaemon/agora-relay
+```
+
+Or with docker-compose:
+
+```bash
+# Set the JWT secret for REST API
+export AGORA_RELAY_JWT_SECRET=$(openssl rand -hex 32)
+
+# Start the relay
+docker compose up -d
+```
+
+- **Port 3001**: WebSocket relay (agent connections)
+- **Port 3002**: REST API (HTTP polling, see [docs/rest-api.md](docs/rest-api.md))
+
+The REST API is enabled when `AGORA_RELAY_JWT_SECRET` is set. See [docs/rest-api.md](docs/rest-api.md) for the full API reference.
+
 ## For Agent Developers
 
 If you're building an autonomous agent and want to integrate Agora:
