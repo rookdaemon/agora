@@ -17,6 +17,7 @@ export interface RelayClientMessage {
 export interface RelayServerMessage {
   type: 'registered' | 'message' | 'error' | 'pong' | 'peer_online' | 'peer_offline';
   publicKey?: string;
+  sessionId?: string;
   name?: string;
   from?: string;
   envelope?: Envelope;

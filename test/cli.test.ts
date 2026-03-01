@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -348,6 +348,46 @@ describe('CLI', () => {
 
       assert.strictEqual(result.exitCode, 1);
       assert.ok(result.stderr.includes('Invalid message type'));
+    });
+
+    it('should error if --direct and --relay-only are both set', async () => {
+      const result = await runCli([
+        'send', 'alice', 'hello',
+        '--direct', '--relay-only',
+        '--config', testConfigPath,
+      ]);
+
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('mutually exclusive'));
+    });
+
+    it('should error with --direct when peer has no URL configured', async () => {
+      // Inject a relay-only peer directly into the config (no url)
+      const config = JSON.parse(readFileSync(testConfigPath, 'utf-8'));
+      config.peers['relay-only-peer'] = { publicKey: 'relay-only-pub', name: 'relay-only-peer' };
+      writeFileSync(testConfigPath, JSON.stringify(config, null, 2));
+
+      const result = await runCli([
+        'send', 'relay-only-peer', 'hello',
+        '--direct',
+        '--config', testConfigPath,
+      ]);
+
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('no URL configured'));
+    });
+
+    it('should fail clearly with --direct when peer URL is unreachable', async () => {
+      const result = await runCli([
+        'send', 'alice', 'hello',
+        '--direct',
+        '--config', testConfigPath,
+      ]);
+
+      // Should fail (no server running) and not fall back to relay
+      assert.strictEqual(result.exitCode, 1);
+      const parsed = JSON.parse(result.stdout);
+      assert.strictEqual(parsed.transport, 'http');
     });
   });
 

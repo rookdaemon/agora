@@ -1,22 +1,18 @@
 services:
-  relay:
-    image: ghcr.io/rookdaemon/agora-relay
+  agora-relay:
+    image: rookdaemon/agora-relay
     build: .
     ports:
-      - "3001:3001"  # WebSocket
-      - "3002:3002"  # REST API
+      - "3001:3001"  # REST API
+      - "3002:3002"  # WebSocket relay
     environment:
-      - PORT=3001
-      # Required for REST API — generate a secure random string:
-      #   openssl rand -hex 32
-      - AGORA_RELAY_JWT_SECRET=${AGORA_RELAY_JWT_SECRET}
-      # Optional: token expiry in seconds (default: 3600)
-      # - AGORA_JWT_EXPIRY_SECONDS=3600
-      # Optional: disk-backed storage for specific peers
-      # - AGORA_STORAGE_PEERS=pubkey1,pubkey2
-      # - AGORA_STORAGE_DIR=/data/messages
-    # volumes:
-    #   - agora-data:/data/messages  # Uncomment for persistent storage
-
-# volumes:
-#   agora-data:
+      - NODE_ENV=production
+      - REST_PORT=3001
+      - RELAY_PORT=3002
+      - MAX_PEERS=100
+      - MESSAGE_TTL_MS=86400000
+      - RATE_LIMIT_RPM=60
+      - ALLOWED_ORIGINS=*
+      # Uncomment and set a stable secret so sessions survive restarts:
+      # - JWT_SECRET=change-me-to-a-long-random-string
+    restart: unless-stopped

@@ -1,22 +1,23 @@
-# Multi-stage build for Agora relay
-# Runs both WebSocket relay (port 3001) and REST API (port 3002)
-
-FROM node:22-slim AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package*.json tsup.config.ts tsconfig.json ./
 RUN npm ci
-COPY tsconfig.json tsup.config.ts ./
-COPY src/ src/
+COPY src/ ./src/
 RUN npm run build
 
-FROM node:22-slim
+FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/dist dist/
-COPY --from=builder /app/node_modules node_modules/
-COPY package.json ./
+COPY --from=builder /app/dist ./dist
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-ENV PORT=3001
-EXPOSE 3001 3002
+# REST API port (default: 3001)
+EXPOSE 3001
+# WebSocket relay port (default: 3002)
+EXPOSE 3002
 
-# Start the relay via the CLI
-CMD ["node", "dist/cli.js", "relay", "--port", "3001"]
+ENV NODE_ENV=production \
+    REST_PORT=3001 \
+    RELAY_PORT=3002
+
+CMD ["node", "dist/relay/relay-server.js"]
