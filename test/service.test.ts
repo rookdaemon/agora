@@ -361,7 +361,7 @@ describe('AgoraService.replyToEnvelope', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.replyToEnvelope({
@@ -387,7 +387,7 @@ describe('AgoraService.replyToEnvelope', () => {
       // no relay configured
     };
 
-    const service = new AgoraService(config);
+    const service = new AgoraService(config, () => {});
 
     const result = await service.replyToEnvelope({
       targetPubkey: unknownPeerIdentity.publicKey,
@@ -411,7 +411,7 @@ describe('AgoraService.replyToEnvelope', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.replyToEnvelope({
@@ -439,7 +439,7 @@ describe('AgoraService.replyToEnvelope', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     const result = await service.replyToEnvelope({
@@ -463,7 +463,7 @@ describe('AgoraService.replyToEnvelope', () => {
       relay: { url: 'wss://relay.example.com', autoConnect: true },
     };
 
-    const service = new AgoraService(config, undefined, relayClientFactory);
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
     await service.connectRelay('wss://relay.example.com');
 
     await service.replyToEnvelope({
