@@ -41,3 +41,43 @@ export function saveIgnoredPeers(peers: string[], filePath?: string): void {
 
   writeFileSync(path, content, 'utf-8');
 }
+
+export class IgnoredPeersManager {
+  private readonly peers: Set<string>;
+  private readonly filePath: string;
+
+  constructor(filePath?: string) {
+    this.filePath = filePath ?? getIgnoredPeersPath();
+    this.peers = new Set(loadIgnoredPeers(this.filePath));
+  }
+
+  ignorePeer(publicKey: string): boolean {
+    const normalized = publicKey.trim();
+    if (!normalized) {
+      return false;
+    }
+    const added = !this.peers.has(normalized);
+    this.peers.add(normalized);
+    if (added) {
+      this.persist();
+    }
+    return added;
+  }
+
+  unignorePeer(publicKey: string): boolean {
+    const normalized = publicKey.trim();
+    const removed = this.peers.delete(normalized);
+    if (removed) {
+      this.persist();
+    }
+    return removed;
+  }
+
+  listIgnoredPeers(): string[] {
+    return Array.from(this.peers.values()).sort();
+  }
+
+  private persist(): void {
+    saveIgnoredPeers(this.listIgnoredPeers(), this.filePath);
+  }
+}

@@ -7,6 +7,7 @@ import {
   getIgnoredPeersPath,
   loadIgnoredPeers,
   saveIgnoredPeers,
+  IgnoredPeersManager,
   IGNORED_FILE_NAME,
 } from '../../src/relay/ignored-peers';
 
@@ -42,5 +43,22 @@ describe('ignored peers persistence', () => {
     fs.writeFileSync(testFile, '# header\n\npeer-a\npeer-b\n', 'utf-8');
     const loaded = loadIgnoredPeers(testFile);
     assert.deepStrictEqual(loaded, ['peer-a', 'peer-b']);
+  });
+
+  it('manager loads existing persisted peers', () => {
+    fs.writeFileSync(testFile, '# header\npeer-b\npeer-a\n', 'utf-8');
+    const manager = new IgnoredPeersManager(testFile);
+    assert.deepStrictEqual(manager.listIgnoredPeers(), ['peer-a', 'peer-b']);
+  });
+
+  it('manager persists ignore/unignore changes', () => {
+    const manager = new IgnoredPeersManager(testFile);
+    assert.strictEqual(manager.ignorePeer('peer-z'), true);
+    assert.strictEqual(manager.ignorePeer('peer-a'), true);
+    assert.strictEqual(manager.ignorePeer('peer-a'), false);
+    assert.strictEqual(manager.unignorePeer('peer-z'), true);
+
+    const loaded = loadIgnoredPeers(testFile);
+    assert.deepStrictEqual(loaded, ['peer-a']);
   });
 });
