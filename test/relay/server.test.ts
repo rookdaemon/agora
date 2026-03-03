@@ -221,6 +221,106 @@ describe('RelayServer', () => {
 
     ws.close();
   });
+
+  it('should drop duplicate envelope IDs before forwarding', async () => {
+    const alice = generateKeyPair();
+    const bob = generateKeyPair();
+    const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { text: 'dedup me' });
+
+    const sender = new WebSocket(`ws://localhost:${TEST_PORT}`);
+    const recipient = new WebSocket(`ws://localhost:${TEST_PORT}`);
+
+    await Promise.all([
+      new Promise<void>((r) => sender.on('open', r)),
+      new Promise<void>((r) => recipient.on('open', r)),
+    ]);
+
+    await new Promise<void>((resolve) => {
+      sender.on('message', (data: Buffer) => {
+        if (JSON.parse(data.toString()).type === 'registered') resolve();
+      });
+      sender.send(JSON.stringify({ type: 'register', publicKey: alice.publicKey }));
+    });
+
+    await new Promise<void>((resolve) => {
+      recipient.on('message', (data: Buffer) => {
+        if (JSON.parse(data.toString()).type === 'registered') resolve();
+      });
+      recipient.send(JSON.stringify({ type: 'register', publicKey: bob.publicKey }));
+    });
+
+    const received: any[] = [];
+    recipient.on('message', (data: Buffer) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'message') {
+        received.push(msg);
+      }
+    });
+
+    sender.send(JSON.stringify({ type: 'message', to: bob.publicKey, envelope }));
+    sender.send(JSON.stringify({ type: 'message', to: bob.publicKey, envelope }));
+
+    await new Promise((r) => setTimeout(r, 120));
+
+    assert.strictEqual(received.length, 1);
+    assert.strictEqual(received[0].envelope.id, envelope.id);
+
+    sender.close();
+    recipient.close();
+  });
+
+  it('should enforce per-sender rate limit before forwarding', async () => {
+    const limitedServer = new RelayServer({
+      rateLimit: { enabled: true, maxMessages: 3, windowMs: 60_000 },
+    });
+    await server.stop();
+    server = limitedServer;
+    await server.start(TEST_PORT);
+
+    const alice = generateKeyPair();
+    const bob = generateKeyPair();
+
+    const sender = new WebSocket(`ws://localhost:${TEST_PORT}`);
+    const recipient = new WebSocket(`ws://localhost:${TEST_PORT}`);
+
+    await Promise.all([
+      new Promise<void>((r) => sender.on('open', r)),
+      new Promise<void>((r) => recipient.on('open', r)),
+    ]);
+
+    await new Promise<void>((resolve) => {
+      sender.on('message', (data: Buffer) => {
+        if (JSON.parse(data.toString()).type === 'registered') resolve();
+      });
+      sender.send(JSON.stringify({ type: 'register', publicKey: alice.publicKey }));
+    });
+
+    await new Promise<void>((resolve) => {
+      recipient.on('message', (data: Buffer) => {
+        if (JSON.parse(data.toString()).type === 'registered') resolve();
+      });
+      recipient.send(JSON.stringify({ type: 'register', publicKey: bob.publicKey }));
+    });
+
+    const received: any[] = [];
+    recipient.on('message', (data: Buffer) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'message') {
+        received.push(msg);
+      }
+    });
+
+    for (let i = 0; i < 5; i++) {
+      const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { seq: i });
+      sender.send(JSON.stringify({ type: 'message', to: bob.publicKey, envelope }));
+    }
+
+    await new Promise((r) => setTimeout(r, 150));
+    assert.strictEqual(received.length, 3);
+
+    sender.close();
+    recipient.close();
+  });
 });
 
 describe('MessageStore', () => {

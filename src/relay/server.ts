@@ -4,6 +4,22 @@ import { verifyEnvelope, createEnvelope, type Envelope } from '../message/envelo
 import type { PeerListRequestPayload, PeerListResponsePayload } from '../message/types/peer-discovery';
 import { MessageStore } from './store';
 
+interface SenderWindow {
+  count: number;
+  windowStart: number;
+}
+
+export interface RelayRateLimitOptions {
+  enabled?: boolean;
+  maxMessages?: number;
+  windowMs?: number;
+}
+
+export interface RelayEnvelopeDedupOptions {
+  enabled?: boolean;
+  maxIds?: number;
+}
+
 /**
  * Represents a connected agent in the relay
  */
@@ -51,6 +67,10 @@ export interface RelayServerOptions {
   storageDir?: string;
   /** Maximum number of concurrent registered peers (default: 100) */
   maxPeers?: number;
+  /** Per-sender sliding-window message rate limiting */
+  rateLimit?: RelayRateLimitOptions;
+  /** Envelope ID deduplication options */
+  envelopeDedup?: RelayEnvelopeDedupOptions;
 }
 
 export class RelayServer extends EventEmitter {
@@ -61,6 +81,14 @@ export class RelayServer extends EventEmitter {
   private storagePeers: string[] = [];
   private store: MessageStore | null = null;
   private maxPeers: number = 100;
+  private readonly senderWindows: Map<string, SenderWindow> = new Map();
+  private static readonly MAX_SENDER_ENTRIES = 500;
+  private readonly processedEnvelopeIds: Set<string> = new Set();
+  private rateLimitEnabled = true;
+  private rateLimitMaxMessages = 10;
+  private rateLimitWindowMs = 60_000;
+  private envelopeDedupEnabled = true;
+  private envelopeDedupMaxIds = 1000;
 
   constructor(options?: { publicKey: string; privateKey: string } | RelayServerOptions) {
     super();
@@ -78,7 +106,83 @@ export class RelayServer extends EventEmitter {
       if (opts.maxPeers !== undefined) {
         this.maxPeers = opts.maxPeers;
       }
+      if (opts.rateLimit) {
+        if (opts.rateLimit.enabled !== undefined) {
+          this.rateLimitEnabled = opts.rateLimit.enabled;
+        }
+        if (opts.rateLimit.maxMessages !== undefined && opts.rateLimit.maxMessages > 0) {
+          this.rateLimitMaxMessages = opts.rateLimit.maxMessages;
+        }
+        if (opts.rateLimit.windowMs !== undefined && opts.rateLimit.windowMs > 0) {
+          this.rateLimitWindowMs = opts.rateLimit.windowMs;
+        }
+      }
+      if (opts.envelopeDedup) {
+        if (opts.envelopeDedup.enabled !== undefined) {
+          this.envelopeDedupEnabled = opts.envelopeDedup.enabled;
+        }
+        if (opts.envelopeDedup.maxIds !== undefined && opts.envelopeDedup.maxIds > 0) {
+          this.envelopeDedupMaxIds = opts.envelopeDedup.maxIds;
+        }
+      }
     }
+  }
+
+  private isRateLimitedSender(senderPublicKey: string): boolean {
+    if (!this.rateLimitEnabled) {
+      return false;
+    }
+
+    const now = Date.now();
+    const window = this.senderWindows.get(senderPublicKey);
+
+    if (this.senderWindows.size >= RelayServer.MAX_SENDER_ENTRIES && !window) {
+      this.evictOldestSenderWindow();
+    }
+
+    if (!window || (now - window.windowStart) > this.rateLimitWindowMs) {
+      this.senderWindows.set(senderPublicKey, { count: 1, windowStart: now });
+      return false;
+    }
+
+    window.count++;
+    return window.count > this.rateLimitMaxMessages;
+  }
+
+  private evictOldestSenderWindow(): void {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    for (const [key, window] of this.senderWindows.entries()) {
+      if (window.windowStart < oldestTime) {
+        oldestTime = window.windowStart;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey !== null) {
+      this.senderWindows.delete(oldestKey);
+    }
+  }
+
+  private isDuplicateEnvelopeId(envelopeId: string): boolean {
+    if (!this.envelopeDedupEnabled) {
+      return false;
+    }
+
+    if (this.processedEnvelopeIds.has(envelopeId)) {
+      return true;
+    }
+
+    this.processedEnvelopeIds.add(envelopeId);
+    if (this.processedEnvelopeIds.size > this.envelopeDedupMaxIds) {
+      const oldest = this.processedEnvelopeIds.values().next().value;
+      if (oldest !== undefined) {
+        this.processedEnvelopeIds.delete(oldest);
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -278,6 +382,14 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
+          if (this.isRateLimitedSender(agentPublicKey)) {
+            return;
+          }
+
+          if (this.isDuplicateEnvelopeId(envelope.id)) {
+            return;
+          }
+
           // Update lastSeen for any session of sender
           const senderSessionMap = this.sessions.get(agentPublicKey);
           if (senderSessionMap) {
@@ -353,6 +465,14 @@ export class RelayServer extends EventEmitter {
 
           if (envelope.sender !== agentPublicKey) {
             this.sendError(socket, 'Envelope sender does not match registered public key');
+            return;
+          }
+
+          if (this.isRateLimitedSender(agentPublicKey)) {
+            return;
+          }
+
+          if (this.isDuplicateEnvelopeId(envelope.id)) {
             return;
           }
 
