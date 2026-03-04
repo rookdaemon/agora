@@ -235,6 +235,13 @@ The CLI is built as a single executable at `dist/cli.js` (available as `agora` w
 
 ## Making Changes
 
+### Architecture & Testability Requirements
+1. Keep process shells thin: CLI handlers, HTTP servers, workers, and subprocess launchers should only parse input, call services, and map output/errors.
+2. Put business logic in services behind interfaces, not in process entrypoints.
+3. Abstract environment dependencies (file system, process execution, time, env, network transport) behind injectible interfaces.
+4. Ensure services are unit-testable without opening ports or spawning processes.
+5. Prefer service-level unit tests by default; reserve real process/port tests for minimal, explicitly labeled integration coverage.
+
 ### Adding New Message Types
 1. Define type in `src/message/types/` (see `paper-discovery.ts` as example)
 2. Add validation function
