@@ -109,12 +109,27 @@ export class AgoraService {
     this.relayClientFactory = relayClientFactory ?? null;
   }
 
+  private resolvePeer(identifier: string): PeerConfig | undefined {
+    const direct = this.config.peers.get(identifier);
+    if (direct) {
+      return direct;
+    }
+
+    for (const peer of this.config.peers.values()) {
+      if (peer.publicKey === identifier || peer.name === identifier) {
+        return peer;
+      }
+    }
+
+    return undefined;
+  }
+
   /**
    * Send a signed message to a named peer.
    * Tries HTTP webhook first; falls back to relay if HTTP is unavailable.
    */
   async sendMessage(options: SendMessageOptions): Promise<SendMessageResult> {
-    const peer = this.config.peers.get(options.peerName);
+    const peer = this.resolvePeer(options.peerName);
     if (!peer) {
       return {
         ok: false,
@@ -252,7 +267,7 @@ export class AgoraService {
   }
 
   getPeerConfig(name: string): PeerConfig | undefined {
-    return this.config.peers.get(name);
+    return this.resolvePeer(name);
   }
 
   /**
@@ -320,11 +335,12 @@ export class AgoraService {
     const loaded = await loadAgoraConfigAsync(configPath);
 
     const peers = new Map<string, PeerConfig>();
-    for (const [name, p] of Object.entries(loaded.peers)) {
-      peers.set(name, {
+    for (const p of Object.values(loaded.peers)) {
+      peers.set(p.publicKey, {
         publicKey: p.publicKey,
         url: p.url,
         token: p.token,
+        name: p.name,
       } satisfies PeerConfig);
     }
 

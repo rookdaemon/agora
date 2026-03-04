@@ -25,6 +25,23 @@ interface CliOptions {
   pretty?: boolean;
 }
 
+type ConfigPeer = ReturnType<typeof loadPeerConfig>['peers'][string];
+
+function resolvePeerEntry(peers: Record<string, ConfigPeer>, identifier: string): { key: string; peer: ConfigPeer } | undefined {
+  const direct = peers[identifier];
+  if (direct) {
+    return { key: identifier, peer: direct };
+  }
+
+  for (const [key, peer] of Object.entries(peers)) {
+    if (peer.publicKey === identifier || peer.name === identifier) {
+      return { key, peer };
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Get the config file path from CLI options, environment, or default.
  */
@@ -169,15 +186,20 @@ function handlePeersAdd(args: string[], options: CliOptions & { url?: string; to
     process.exit(1);
   }
 
-  // Add the peer
-  config.peers[name] = {
+  // Add/update the peer (canonical key is full public key)
+  const existingByPubKey = Object.entries(config.peers).find(([, peer]) => peer.publicKey === pubkey);
+  if (existingByPubKey && existingByPubKey[0] !== pubkey) {
+    delete config.peers[existingByPubKey[0]];
+  }
+
+  config.peers[pubkey] = {
     publicKey: pubkey,
-    name, // Set name to match the key for consistency
+    name,
   };
 
   if (url && token) {
-    config.peers[name].url = url;
-    config.peers[name].token = token;
+    config.peers[pubkey].url = url;
+    config.peers[pubkey].token = token;
   }
 
   savePeerConfig(configPath, config);
@@ -225,7 +247,7 @@ function handlePeersRemove(args: string[], options: CliOptions): void {
     process.exit(1);
   }
 
-  const name = args[0];
+  const peerRef = args[0];
   const configPath = getConfigPath(options);
 
   if (!existsSync(configPath)) {
@@ -235,16 +257,17 @@ function handlePeersRemove(args: string[], options: CliOptions): void {
 
   const config = loadPeerConfig(configPath);
 
-  if (!config.peers[name]) {
-    console.error(`Error: Peer '${name}' not found.`);
+  const resolved = resolvePeerEntry(config.peers, peerRef);
+  if (!resolved) {
+    console.error(`Error: Peer '${peerRef}' not found.`);
     process.exit(1);
   }
 
-  delete config.peers[name];
+  delete config.peers[resolved.key];
   savePeerConfig(configPath, config);
   output({ 
     status: 'removed',
-    name 
+    name: peerRef 
   }, options.pretty || false);
 }
 
@@ -349,10 +372,9 @@ async function handlePeersDiscover(
         // Only save if not already in config
         const existing = Object.values(config.peers).find(p => p.publicKey === peer.publicKey);
         if (!existing) {
-          const peerName = peer.metadata?.name || `peer-${peer.publicKey.substring(0, 8)}`;
-          config.peers[peerName] = {
+          config.peers[peer.publicKey] = {
             publicKey: peer.publicKey,
-            name: peerName,
+            name: peer.metadata?.name,
           };
           savedCount++;
         }
@@ -405,7 +427,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
     process.exit(1);
   }
 
-  const name = args[0];
+  const peerRef = args[0];
   const configPath = getConfigPath(options);
 
   if (!existsSync(configPath)) {
@@ -415,12 +437,13 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
 
   const config = loadPeerConfig(configPath);
 
-  if (!config.peers[name]) {
-    console.error(`Error: Peer '${name}' not found.`);
+  const resolved = resolvePeerEntry(config.peers, peerRef);
+  if (!resolved) {
+    console.error(`Error: Peer '${peerRef}' not found.`);
     process.exit(1);
   }
 
-  const peer = config.peers[name];
+  const peer = resolved.peer;
 
   let messageType: MessageType;
   let messagePayload: unknown;
@@ -460,7 +483,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
 
   // --direct requires the peer to have a URL
   if (isDirect && !peer.url) {
-    console.error(`Error: --direct requested but peer '${name}' has no URL configured.`);
+    console.error(`Error: --direct requested but peer '${peerRef}' has no URL configured.`);
     process.exit(1);
   }
 
@@ -491,7 +514,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
       if (result.ok) {
         output({ 
           status: 'sent',
-          peer: name,
+          peer: peerRef,
           type: messageType,
           transport: 'http',
           httpStatus: result.status
@@ -504,7 +527,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
         // --direct: do not fall back to relay
         output({ 
           status: 'failed',
-          peer: name,
+          peer: peerRef,
           type: messageType,
           transport: 'http',
           httpStatus: result.status,
@@ -517,7 +540,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
       if (!hasRelay || !config.relay) {
         output({ 
           status: 'failed',
-          peer: name,
+          peer: peerRef,
           type: messageType,
           transport: 'http',
           httpStatus: result.status,
@@ -546,14 +569,14 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
       if (result.ok) {
         output({ 
           status: 'sent',
-          peer: name,
+          peer: peerRef,
           type: messageType,
           transport: 'relay'
         }, options.pretty || false);
       } else {
         output({ 
           status: 'failed',
-          peer: name,
+          peer: peerRef,
           type: messageType,
           transport: 'relay',
           error: result.error
@@ -562,7 +585,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
       }
     } else if (!shouldTryHttp) {
       // Neither HTTP nor relay available
-      console.error(`Error: Peer '${name}' unreachable. No HTTP endpoint and no relay configured.`);
+      console.error(`Error: Peer '${peerRef}' unreachable. No HTTP endpoint and no relay configured.`);
       process.exit(1);
     }
   } catch (e) {
@@ -677,7 +700,8 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
   // Send announce to all peers
   const results: Array<{ peer: string; status: string; transport?: string; httpStatus?: number; error?: string }> = [];
 
-  for (const [name, peer] of Object.entries(config.peers)) {
+  for (const [, peer] of Object.entries(config.peers)) {
+    const peerLabel = peer.name || peer.publicKey;
     const hasHttpTransport = peer.url && peer.token;
     const hasRelay = config.relay;
 
@@ -705,14 +729,14 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
 
         if (result.ok) {
           results.push({
-            peer: name,
+            peer: peerLabel,
             status: 'sent',
             transport: 'http',
             httpStatus: result.status,
           });
         } else {
           results.push({
-            peer: name,
+            peer: peerLabel,
             status: 'failed',
             transport: 'http',
             httpStatus: result.status,
@@ -737,13 +761,13 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
 
         if (result.ok) {
           results.push({
-            peer: name,
+            peer: peerLabel,
             status: 'sent',
             transport: 'relay',
           });
         } else {
           results.push({
-            peer: name,
+            peer: peerLabel,
             status: 'failed',
             transport: 'relay',
             error: result.error,
@@ -751,14 +775,14 @@ async function handleAnnounce(options: CliOptions & { name?: string; version?: s
         }
       } else {
         results.push({
-          peer: name,
+          peer: peerLabel,
           status: 'unreachable',
           error: 'No HTTP endpoint and no relay configured',
         });
       }
     } catch (e) {
       results.push({
-        peer: name,
+        peer: peerLabel,
         status: 'error',
         error: e instanceof Error ? e.message : String(e),
       });
@@ -778,7 +802,7 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
     process.exit(1);
   }
 
-  const name = args[0];
+  const peerRef = args[0];
   const configPath = getConfigPath(options);
 
   if (!existsSync(configPath)) {
@@ -788,15 +812,16 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
 
   const config = loadPeerConfig(configPath);
 
-  if (!config.peers[name]) {
-    console.error(`Error: Peer '${name}' not found.`);
+  const resolved = resolvePeerEntry(config.peers, peerRef);
+  if (!resolved) {
+    console.error(`Error: Peer '${peerRef}' not found.`);
     process.exit(1);
   }
 
-  const peer = config.peers[name];
+  const peer = resolved.peer;
 
   if (!peer.url) {
-    console.error(`Error: Peer '${name}' has no URL configured. Cannot diagnose.`);
+    console.error(`Error: Peer '${peerRef}' has no URL configured. Cannot diagnose.`);
     process.exit(1);
   }
 
@@ -828,7 +853,7 @@ async function handleDiagnose(args: string[], options: CliOptions & { checks?: s
     checks: Record<string, CheckResult>;
     timestamp: string;
   } = {
-    peer: name,
+    peer: peerRef,
     status: 'unknown',
     checks: {},
     timestamp: new Date().toISOString(),

@@ -149,6 +149,11 @@ describe('CLI', () => {
       assert.strictEqual(output.name, 'alice');
       assert.strictEqual(output.url, 'http://localhost:18790/hooks');
       assert.strictEqual(output.publicKey, 'abcd1234');
+
+      const savedConfig = JSON.parse(readFileSync(testConfigPath, 'utf-8'));
+      assert.ok(savedConfig.peers['abcd1234']);
+      assert.strictEqual(savedConfig.peers['abcd1234'].publicKey, 'abcd1234');
+      assert.strictEqual(savedConfig.peers['abcd1234'].name, 'alice');
     });
 
     it('should error if missing peer name', async () => {
@@ -449,7 +454,7 @@ describe('CLI', () => {
 
       const output = JSON.parse(result.stdout);
       assert.strictEqual(output.peerCount, 1);
-      assert.ok(output.peers.includes('alice'));
+      assert.ok(output.peers.includes('alice-pub'));
     });
 
     it('should error if config not found', async () => {

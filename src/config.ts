@@ -70,10 +70,10 @@ function parseConfig(config: Record<string, unknown>): AgoraConfig {
 
   const peers: Record<string, AgoraPeerConfig> = {};
   if (config.peers && typeof config.peers === 'object') {
-    for (const [name, entry] of Object.entries(config.peers)) {
+    for (const entry of Object.values(config.peers)) {
       const peer = entry as Record<string, unknown>;
       if (peer && typeof peer.publicKey === 'string') {
-        peers[name] = {
+        peers[peer.publicKey as string] = {
           publicKey: peer.publicKey as string,
           url: typeof peer.url === 'string' ? peer.url : undefined,
           token: typeof peer.token === 'string' ? peer.token : undefined,

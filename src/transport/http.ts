@@ -7,6 +7,8 @@ export interface PeerConfig {
   token?: string;
   /** Peer's public key (hex) for verifying responses */
   publicKey: string;
+  /** Optional convenience alias only (not identity) */
+  name?: string;
 }
 
 export interface TransportConfig {
