@@ -5,6 +5,8 @@ import {
   expand,
   compactInlineReferences,
   expandInlineReferences,
+  sanitizeText,
+  resolveDisplayName,
   type PeerReferenceDirectory,
 } from '../src/utils';
 
@@ -51,5 +53,25 @@ describe('peer reference helpers', () => {
 
     const compacted = compactInlineReferences(`hello @${ALICE}`, peers);
     assert.strictEqual(compacted, 'hello @alice...99990000');
+  });
+});
+
+describe('display/sanitization helpers', () => {
+  it('sanitizeText strips control chars and fixes lone surrogates', () => {
+    assert.strictEqual(sanitizeText('a\x00b'), 'ab');
+    assert.strictEqual(sanitizeText('x\uD800y'), 'x\uFFFDy');
+  });
+
+  it('resolveDisplayName prefers configured peer name by public key', () => {
+    const peers = directory();
+    assert.strictEqual(resolveDisplayName(ALICE, 'relay-alice', peers), 'alice');
+  });
+
+  it('resolveDisplayName falls back to sanitized relay name', () => {
+    assert.strictEqual(resolveDisplayName('unknown', 'relay\x00name', directory()), 'relayname');
+  });
+
+  it('resolveDisplayName ignores short-id relay names', () => {
+    assert.strictEqual(resolveDisplayName('unknown', '...1234abcd', directory()), undefined);
   });
 });

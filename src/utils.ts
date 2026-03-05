@@ -114,6 +114,41 @@ export function compactInlineReferences(text: string, directory: PeerReferenceDi
 }
 
 /**
+ * Strip characters that can crash downstream width/segmenter logic in UIs.
+ * Removes control chars (except newline/tab) and replaces lone surrogates.
+ */
+export function sanitizeText(text: string): string {
+  return text
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+}
+
+/**
+ * Resolve a display name for a peer.
+ * Priority order:
+ * 1. configured name in directory for the exact public key
+ * 2. relay-broadcast name (if not already a short-id token)
+ * 3. undefined
+ */
+export function resolveDisplayName(
+  publicKey: string,
+  peerName: string | undefined,
+  directory?: PeerReferenceDirectory,
+): string | undefined {
+  const entry = findById(publicKey, directory);
+  if (entry?.name) {
+    return entry.name;
+  }
+
+  if (peerName && !peerName.startsWith('...')) {
+    return sanitizeText(peerName);
+  }
+
+  return undefined;
+}
+
+/**
  * Resolves the name to broadcast when connecting to a relay.
  * Priority order:
  * 1. CLI --name flag
