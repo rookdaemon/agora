@@ -10,12 +10,12 @@ export function shortKey(publicKey: string): string {
   return "..." + publicKey.slice(-8);
 }
 
-interface PeerReferenceEntry {
+export interface PeerReferenceEntry {
   publicKey: string;
   name?: string;
 }
 
-type PeerReferenceDirectory =
+export type PeerReferenceDirectory =
   | Record<string, PeerReferenceEntry>
   | Map<string, PeerReferenceEntry>
   | PeerReferenceEntry[];
@@ -37,20 +37,10 @@ function findById(id: string, directory?: PeerReferenceDirectory): PeerReference
   return toDirectoryEntries(directory).find((entry) => entry.publicKey === id);
 }
 
-function countByName(directory?: PeerReferenceDirectory): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const entry of toDirectoryEntries(directory)) {
-    if (!entry.name) continue;
-    counts.set(entry.name, (counts.get(entry.name) ?? 0) + 1);
-  }
-  return counts;
-}
-
 /**
  * Shorten a full peer ID for display/reference.
- * Priority:
- * - Unique configured name => "name"
- * - Duplicate configured name => "name...<last8>"
+ * Canonical form:
+ * - Configured name => "name...<last8>"
  * - Unknown/no-name => "...<last8>"
  */
 export function shorten(id: string, directory?: PeerReferenceDirectory): string {
@@ -59,11 +49,7 @@ export function shorten(id: string, directory?: PeerReferenceDirectory): string 
   if (!entry?.name) {
     return `...${suffix}`;
   }
-  const duplicateCount = countByName(directory).get(entry.name) ?? 0;
-  if (duplicateCount > 1) {
-    return `${entry.name}...${suffix}`;
-  }
-  return entry.name;
+  return `${entry.name}...${suffix}`;
 }
 
 /**

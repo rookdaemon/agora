@@ -16,6 +16,7 @@ export * from './relay/types';
 export * from './relay/message-buffer';
 export * from './relay/store';
 export * from './relay/ignored-peers';
+export * from './relay/inbound-message-guard';
 export {
   createToken,
   revokeToken,
