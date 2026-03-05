@@ -213,8 +213,8 @@ export function resolveBroadcastName(
 }
 
 /**
- * Formats a display name with short ID postfix.
- * If name exists: "name (...3f8c2247)"
+ * Formats a display name using the canonical short-reference form.
+ * If name exists: "name...3f8c2247"  (same form as shorten())
  * If no name: "...3f8c2247" (short ID only)
  *
  * @param name - Optional name to display (should not be a short ID)
@@ -222,10 +222,10 @@ export function resolveBroadcastName(
  * @returns Formatted display string
  */
 export function formatDisplayName(name: string | undefined, publicKey: string): string {
-  const shortId = shortKey(publicKey);
+  const suffix = publicKey.slice(-8);
   // If name is undefined, empty, or is already a short ID, return only short ID
   if (!name || name.trim() === '' || name.startsWith('...')) {
-    return shortId;
+    return `...${suffix}`;
   }
-  return `${name} (${shortId})`;
+  return `${name}...${suffix}`;
 }

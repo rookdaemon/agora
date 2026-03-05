@@ -8,6 +8,7 @@ import {
   expandInlineReferences,
   sanitizeText,
   resolveDisplayName,
+  formatDisplayName,
   extractTextFromPayload,
   type PeerReferenceDirectory,
 } from '../src/utils';
@@ -83,6 +84,24 @@ describe('display/sanitization helpers', () => {
 
   it('resolveDisplayName ignores short-id relay names', () => {
     assert.strictEqual(resolveDisplayName('unknown', '...1234abcd', directory()), undefined);
+  });
+});
+
+describe('formatDisplayName', () => {
+  it('uses canonical name...suffix when name exists', () => {
+    assert.strictEqual(formatDisplayName('rook', ALICE), 'rook...99990000');
+  });
+
+  it('returns ...suffix when name is undefined', () => {
+    assert.strictEqual(formatDisplayName(undefined, ALICE), '...99990000');
+  });
+
+  it('returns ...suffix when name is empty string', () => {
+    assert.strictEqual(formatDisplayName('', ALICE), '...99990000');
+  });
+
+  it('returns ...suffix when name is already a short ID', () => {
+    assert.strictEqual(formatDisplayName('...99990000', ALICE), '...99990000');
   });
 });
 
