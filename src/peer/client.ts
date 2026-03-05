@@ -56,7 +56,10 @@ export class PeerClient extends EventEmitter {
           'announce',
           this.identity.publicKey,
           this.identity.privateKey,
-          this.announcePayload
+          this.announcePayload,
+          Date.now(),
+          undefined,
+          [this.identity.publicKey]
         );
         this.socket!.send(JSON.stringify(announceEnvelope));
       });
@@ -75,14 +78,14 @@ export class PeerClient extends EventEmitter {
           // First message should be an announce from the peer
           if (!this.peerPublicKey) {
             if (envelope.type === 'announce') {
-              this.peerPublicKey = envelope.sender;
+              this.peerPublicKey = envelope.from;
               this.emit('connected', this.peerPublicKey);
             }
             return;
           }
 
           // Verify the message is from the announced peer
-          if (envelope.sender !== this.peerPublicKey) {
+          if (envelope.from !== this.peerPublicKey) {
             // Drop messages from wrong sender
             return;
           }

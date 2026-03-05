@@ -78,7 +78,7 @@ describe('HTTP Transport', () => {
       const envelope = JSON.parse(envelopeJson);
       
       assert.strictEqual(envelope.type, 'request');
-      assert.strictEqual(envelope.sender, identity.publicKey);
+      assert.strictEqual(envelope.from, identity.publicKey);
       assert.deepStrictEqual(envelope.payload, payload);
 
       // Verify envelope is valid
@@ -227,7 +227,7 @@ describe('HTTP Transport', () => {
 
       assert.strictEqual(result.ok, true);
       if (result.ok) {
-        assert.strictEqual(result.envelope.sender, sender.publicKey);
+        assert.strictEqual(result.envelope.from, sender.publicKey);
         assert.strictEqual(result.envelope.type, 'request');
         assert.deepStrictEqual(result.envelope.payload, { query: 'status' });
       }
@@ -351,7 +351,7 @@ describe('HTTP Transport', () => {
 
       assert.strictEqual(result.ok, true);
       if (result.ok) {
-        assert.strictEqual(result.envelope.sender, alice.publicKey);
+        assert.strictEqual(result.envelope.from, alice.publicKey);
         assert.strictEqual(result.envelope.type, 'publish');
         assert.deepStrictEqual(result.envelope.payload, {
           topic: 'weather',
@@ -397,7 +397,7 @@ describe('HTTP Transport', () => {
 
       assert.strictEqual(result.ok, true);
       if (result.ok) {
-        assert.strictEqual(result.envelope.sender, bob.publicKey);
+        assert.strictEqual(result.envelope.from, bob.publicKey);
         assert.strictEqual(result.envelope.type, 'response');
         assert.strictEqual(result.envelope.inReplyTo, request.id);
         assert.deepStrictEqual(result.envelope.payload, { status: 'ok' });

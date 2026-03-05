@@ -377,8 +377,15 @@ export class RelayServer extends EventEmitter {
           }
 
           // Verify sender matches registered agent
-          if (envelope.sender !== agentPublicKey) {
+          const envelopeFrom = envelope.from;
+          if (envelopeFrom !== agentPublicKey) {
             this.sendError(socket, 'Envelope sender does not match registered public key');
+            return;
+          }
+
+          // Strict p2p routing: envelope.to must include the relay transport recipient.
+          if (!Array.isArray(envelope.to) || envelope.to.length === 0 || !envelope.to.includes(msg.to)) {
+            this.sendError(socket, 'Envelope recipients do not include requested relay recipient');
             return;
           }
 
@@ -444,67 +451,6 @@ export class RelayServer extends EventEmitter {
           } catch (err) {
             this.sendError(socket, 'Failed to relay message');
             this.emit('error', err as Error);
-          }
-          return;
-        }
-
-        // Handle broadcast: same validation as message, then forward to all other agents
-        if (msg.type === 'broadcast') {
-          if (!msg.envelope || typeof msg.envelope !== 'object') {
-            this.sendError(socket, 'Invalid broadcast: missing or invalid "envelope" field');
-            return;
-          }
-
-          const envelope = msg.envelope as Envelope;
-
-          const verification = verifyEnvelope(envelope);
-          if (!verification.valid) {
-            this.sendError(socket, `Invalid envelope: ${verification.reason || 'verification failed'}`);
-            return;
-          }
-
-          if (envelope.sender !== agentPublicKey) {
-            this.sendError(socket, 'Envelope sender does not match registered public key');
-            return;
-          }
-
-          if (this.isRateLimitedSender(agentPublicKey)) {
-            return;
-          }
-
-          if (this.isDuplicateEnvelopeId(envelope.id)) {
-            return;
-          }
-
-          // Update lastSeen for any session of sender
-          const senderSessionMap = this.sessions.get(agentPublicKey);
-          if (senderSessionMap) {
-            for (const a of senderSessionMap.values()) {
-              a.lastSeen = Date.now();
-            }
-          }
-
-          const senderSessionMapForName = this.sessions.get(agentPublicKey);
-          const senderAgent = senderSessionMapForName?.values().next().value;
-          const relayMessage = {
-            type: 'message' as const,
-            from: agentPublicKey,
-            name: senderAgent?.name,
-            envelope,
-          };
-          const messageStr = JSON.stringify(relayMessage);
-
-          for (const [key, sessionMap] of this.sessions) {
-            if (key === agentPublicKey) continue;
-            for (const agent of sessionMap.values()) {
-              if (agent.socket.readyState === WebSocket.OPEN) {
-                try {
-                  agent.socket.send(messageStr);
-                } catch (err) {
-                  this.emit('error', err as Error);
-                }
-              }
-            }
           }
           return;
         }
@@ -643,7 +589,8 @@ export class RelayServer extends EventEmitter {
       this.identity.privateKey,
       response,
       Date.now(),
-      envelope.id // Reply to the request
+      envelope.id, // Reply to the request
+      [requesterPublicKey]
     );
 
     // Send response

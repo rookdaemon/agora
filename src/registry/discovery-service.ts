@@ -29,7 +29,8 @@ export class DiscoveryService {
    */
   announce(
     capabilities: Capability[],
-    metadata?: { name?: string; version?: string }
+    metadata?: { name?: string; version?: string },
+    recipients: string[] = [this.identity.publicKey]
   ): Envelope<CapabilityAnnouncePayload> {
     const payload: CapabilityAnnouncePayload = {
       publicKey: this.identity.publicKey,
@@ -46,7 +47,10 @@ export class DiscoveryService {
       'capability_announce',
       this.identity.publicKey,
       this.identity.privateKey,
-      payload
+      payload,
+      Date.now(),
+      undefined,
+      recipients
     );
   }
 
@@ -151,7 +155,8 @@ export class DiscoveryService {
       this.identity.privateKey,
       responsePayload,
       Date.now(),
-      envelope.id // inReplyTo
+      envelope.id, // inReplyTo
+      [envelope.from]
     );
   }
 

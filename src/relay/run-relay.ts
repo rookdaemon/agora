@@ -33,7 +33,8 @@ import type { RestSession } from './rest-api';
 /** Wrapper so REST API can pass string type; createEnvelope expects MessageType */
 const createEnvelopeForRest: CreateEnvelopeFn = (
   type,
-  sender,
+  from,
+  to,
   privateKey,
   payload,
   timestamp,
@@ -41,11 +42,12 @@ const createEnvelopeForRest: CreateEnvelopeFn = (
 ) =>
   createEnvelope(
     type as MessageType,
-    sender,
+    from,
     privateKey,
     payload,
     timestamp ?? Date.now(),
-    inReplyTo
+    inReplyTo,
+    to
   );
 
 export interface RunRelayOptions {

@@ -14,7 +14,7 @@ import { RelayServer } from './relay/server';
 import { RelayClient } from './relay/client';
 import { PeerDiscoveryService } from './discovery/peer-discovery';
 import { getDefaultBootstrapRelay } from './discovery/bootstrap';
-import { resolveBroadcastName } from './utils';
+import { compactInlineReferences, expand, expandInlineReferences, resolveBroadcastName } from './utils';
 import { ReputationStore } from './reputation/store';
 import { createVerification } from './reputation/verification';
 import { createCommit, createReveal, verifyReveal } from './reputation/commit-reveal';
@@ -28,6 +28,11 @@ interface CliOptions {
 type ConfigPeer = ReturnType<typeof loadPeerConfig>['peers'][string];
 
 function resolvePeerEntry(peers: Record<string, ConfigPeer>, identifier: string): { key: string; peer: ConfigPeer } | undefined {
+  const expanded = expand(identifier, peers);
+  if (expanded && peers[expanded]) {
+    return { key: expanded, peer: peers[expanded] };
+  }
+
   const direct = peers[identifier];
   if (direct) {
     return { key: identifier, peer: direct };
@@ -40,6 +45,19 @@ function resolvePeerEntry(peers: Record<string, ConfigPeer>, identifier: string)
   }
 
   return undefined;
+}
+
+function compactPayloadTextReferences(payload: unknown, peers: Record<string, ConfigPeer>): unknown {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+  if ('text' in payload && typeof (payload as Record<string, unknown>).text === 'string') {
+    return {
+      ...(payload as Record<string, unknown>),
+      text: compactInlineReferences((payload as { text: string }).text, peers),
+    };
+  }
+  return payload;
 }
 
 /**
@@ -469,7 +487,7 @@ async function handleSend(args: string[], options: CliOptions & { type?: string;
       process.exit(1);
     }
     messageType = 'publish';
-    messagePayload = { text: args.slice(1).join(' ') };
+    messagePayload = { text: expandInlineReferences(args.slice(1).join(' '), config.peers) };
   }
 
   const isDirect = options.direct === true;
@@ -629,9 +647,10 @@ function handleDecode(args: string[], options: CliOptions): void {
   if (result.ok) {
     output({
       status: 'verified',
-      sender: result.envelope.sender,
+      from: result.envelope.from,
+      to: result.envelope.to,
       type: result.envelope.type,
-      payload: result.envelope.payload,
+      payload: compactPayloadTextReferences(result.envelope.payload, config.peers),
       id: result.envelope.id,
       timestamp: result.envelope.timestamp,
       inReplyTo: result.envelope.inReplyTo || null,
@@ -670,126 +689,13 @@ function handleStatus(options: CliOptions): void {
 
 /**
  * Handle the `agora announce` command.
- * Broadcasts an announce message to all configured peers.
+ * Disabled to enforce strict peer-to-peer semantics.
  */
 async function handleAnnounce(options: CliOptions & { name?: string; version?: string }): Promise<void> {
-  const configPath = getConfigPath(options);
-
-  if (!existsSync(configPath)) {
-    console.error('Error: Config file not found. Run `agora init` first.');
-    process.exit(1);
-  }
-
-  const config = loadPeerConfig(configPath);
-  const peerCount = Object.keys(config.peers).length;
-
-  if (peerCount === 0) {
-    console.error('Error: No peers configured. Use `agora peers add` to add peers first.');
-    process.exit(1);
-  }
-
-  // Create announce payload
-  const announcePayload: AnnouncePayload = {
-    capabilities: [],
-    metadata: {
-      name: options.name || 'agora-node',
-      version: options.version || '0.1.0',
-    },
-  };
-
-  // Send announce to all peers
-  const results: Array<{ peer: string; status: string; transport?: string; httpStatus?: number; error?: string }> = [];
-
-  for (const [, peer] of Object.entries(config.peers)) {
-    const peerLabel = peer.name || peer.publicKey;
-    const hasHttpTransport = peer.url && peer.token;
-    const hasRelay = config.relay;
-
-    try {
-      if (hasHttpTransport) {
-        // Use HTTP transport
-        const peers = new Map<string, PeerConfig>();
-        peers.set(peer.publicKey, {
-          url: peer.url!,
-          token: peer.token!,
-          publicKey: peer.publicKey,
-        });
-
-        const transportConfig = {
-          identity: config.identity,
-          peers,
-        };
-
-        const result = await sendToPeer(
-          transportConfig,
-          peer.publicKey,
-          'announce',
-          announcePayload
-        );
-
-        if (result.ok) {
-          results.push({
-            peer: peerLabel,
-            status: 'sent',
-            transport: 'http',
-            httpStatus: result.status,
-          });
-        } else {
-          results.push({
-            peer: peerLabel,
-            status: 'failed',
-            transport: 'http',
-            httpStatus: result.status,
-            error: result.error,
-          });
-        }
-      } else if (hasRelay && config.relay) {
-        // Use relay transport
-        // Extract URL from relay (string or object)
-        const relayUrl = typeof config.relay === 'string' ? config.relay : config.relay.url;
-        const relayConfig = {
-          identity: config.identity,
-          relayUrl,
-        };
-
-        const result = await sendViaRelay(
-          relayConfig,
-          peer.publicKey,
-          'announce',
-          announcePayload
-        );
-
-        if (result.ok) {
-          results.push({
-            peer: peerLabel,
-            status: 'sent',
-            transport: 'relay',
-          });
-        } else {
-          results.push({
-            peer: peerLabel,
-            status: 'failed',
-            transport: 'relay',
-            error: result.error,
-          });
-        }
-      } else {
-        results.push({
-          peer: peerLabel,
-          status: 'unreachable',
-          error: 'No HTTP endpoint and no relay configured',
-        });
-      }
-    } catch (e) {
-      results.push({
-        peer: peerLabel,
-        status: 'error',
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
-  }
-
-  output({ results }, options.pretty || false);
+  void options;
+  console.error('Error: `agora announce` is disabled. Agora now supports strict peer-to-peer only (no all/broadcast).');
+  console.error('Use: agora send <peer> --type announce --payload <json>');
+  process.exit(1);
 }
 
 /**
@@ -979,7 +885,8 @@ async function handleServe(options: CliOptions & { port?: string; name?: string 
     console.log(JSON.stringify({
       id: envelope.id,
       type: envelope.type,
-      sender: envelope.sender,
+      from: envelope.from,
+      to: envelope.to,
       timestamp: envelope.timestamp,
       payload: envelope.payload,
     }, null, 2));

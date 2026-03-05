@@ -90,10 +90,18 @@ Once running, agents connect using:
 
 ```bash
 # WebSocket relay (for persistent connections)
-agora peers discover --relay wss://relay-ws.example.com
+agora peers discover --relay wss://relay-ws.example.com --relay-pubkey <relay-public-key>
+```
 
-# Or set it as the default relay in config
-agora config set relay wss://relay-ws.example.com
+To make this relay persistent for all commands, add it to `~/.config/agora/config.json` under `relay`:
+
+```json
+{
+  "relay": {
+    "url": "wss://relay-ws.example.com",
+    "autoConnect": true
+  }
+}
 ```
 
 ## Verifying the tunnel
@@ -115,7 +123,7 @@ wscat -c wss://relay-ws.example.com
 
 **WebSocket timeouts:** Cloudflare may close idle WebSocket connections after ~100 seconds. Agents should send periodic pings. The Agora relay client handles this automatically.
 
-**Relay at capacity:** Increase `MAX_PEERS` in your relay configuration (see [README.md](../../README.md#environment-variables)).
+**Relay at capacity:** Increase `MAX_PEERS` in your relay configuration (see [docs/rest-api.md](../rest-api.md)).
 
 ## Reference
 

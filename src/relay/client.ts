@@ -117,27 +117,6 @@ export class RelayClient extends EventEmitter {
   }
 
   /**
-   * Broadcast a message to all connected peers
-   */
-  async broadcast(envelope: Envelope): Promise<{ ok: boolean; error?: string }> {
-    if (!this.connected()) {
-      return { ok: false, error: 'Not connected to relay' };
-    }
-
-    const message: RelayClientMessage = {
-      type: 'broadcast',
-      envelope,
-    };
-
-    try {
-      this.ws!.send(JSON.stringify(message));
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  /**
    * Get list of currently online peers
    */
   getOnlinePeers(): RelayPeer[] {
@@ -248,7 +227,8 @@ export class RelayClient extends EventEmitter {
           }
 
           // Verify sender matches 'from' field
-          if (msg.envelope.sender !== msg.from) {
+          const envelopeFrom = msg.envelope.from;
+          if (envelopeFrom !== msg.from) {
             this.emit('error', new Error('Envelope sender does not match relay from field'));
             return;
           }

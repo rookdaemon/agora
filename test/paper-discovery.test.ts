@@ -23,7 +23,7 @@ describe('PaperDiscoveryPayload', () => {
     const envelope = createEnvelope('paper_discovery', kp.publicKey, kp.privateKey, samplePayload);
 
     assert.strictEqual(envelope.type, 'paper_discovery');
-    assert.strictEqual(envelope.sender, kp.publicKey);
+    assert.strictEqual(envelope.from, kp.publicKey);
     assert.ok(envelope.id);
     assert.ok(envelope.signature);
     assert.ok(envelope.timestamp > 0);

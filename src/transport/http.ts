@@ -48,7 +48,8 @@ export async function sendToPeer(
     config.identity.privateKey,
     payload,
     Date.now(),
-    inReplyTo
+    inReplyTo,
+    [peerPublicKey]
   );
 
   // Encode envelope as base64url
@@ -59,7 +60,7 @@ export async function sendToPeer(
   const webhookPayload = {
     message: `[AGORA_ENVELOPE]${envelopeBase64}`,
     name: 'Agora',
-    sessionKey: `agora:${envelope.sender.substring(0, 16)}`,
+    sessionKey: `agora:${envelope.from.substring(0, 16)}`,
     deliver: false,
   };
 
@@ -154,7 +155,7 @@ export function decodeInboundEnvelope(
   }
 
   // Check if sender is a known peer
-  const senderKnown = knownPeers.has(envelope.sender);
+  const senderKnown = knownPeers.has(envelope.from);
   if (!senderKnown) {
     return { ok: false, reason: 'unknown_sender' };
   }

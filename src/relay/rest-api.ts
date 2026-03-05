@@ -80,7 +80,8 @@ export interface RelayInterface {
  */
 export type CreateEnvelopeFn = (
   type: string,
-  sender: string,
+  from: string,
+  to: string[],
   privateKey: string,
   payload: unknown,
   timestamp?: number,
@@ -88,7 +89,8 @@ export type CreateEnvelopeFn = (
 ) => {
   id: string;
   type: string;
-  sender: string;
+  from: string;
+  to: string[];
   timestamp: number;
   payload: unknown;
   signature: string;
@@ -160,6 +162,7 @@ export function createRestRouter(
     const testEnvelope = createEnv(
       'announce',
       publicKey,
+      [publicKey],
       privateKey,
       { challenge: 'register' },
       Date.now()
@@ -244,6 +247,7 @@ export function createRestRouter(
       const envelope = createEnv(
         type,
         senderPublicKey,
+        [to],
         session.privateKey,
         payload,
         Date.now(),

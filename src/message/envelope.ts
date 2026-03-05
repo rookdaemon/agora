@@ -39,8 +39,10 @@ export interface Envelope<T = unknown> {
   id: string;
   /** Message type */
   type: MessageType;
-  /** Sender's public key (hex-encoded ed25519) */
-  sender: string;
+  /** Sender peer ID (full ID) */
+  from: string;
+  /** Recipient peer IDs (full IDs) */
+  to: string[];
   /** Unix timestamp (ms) when the message was created */
   timestamp: number;
   /** Optional: ID of the message this is responding to */
@@ -69,12 +71,33 @@ function stableStringify(value: unknown): string {
  * Canonical form of an envelope for signing/hashing.
  * Deterministic JSON serialization: recursively sorted keys, no whitespace.
  */
-export function canonicalize(type: MessageType, sender: string, timestamp: number, payload: unknown, inReplyTo?: string): string {
-  const obj: Record<string, unknown> = { payload, sender, timestamp, type };
+export function canonicalize(
+  type: MessageType,
+  from: string,
+  to: string[],
+  timestamp: number,
+  payload: unknown,
+  inReplyTo?: string,
+): string {
+  const obj: Record<string, unknown> = { from, payload, timestamp, to, type };
   if (inReplyTo !== undefined) {
     obj.inReplyTo = inReplyTo;
   }
   return stableStringify(obj);
+}
+
+function normalizeRecipients(from: string, to?: string | string[]): string[] {
+  const list = Array.isArray(to) ? to : (typeof to === 'string' ? [to] : [from]);
+  const unique = new Set<string>();
+  for (const recipient of list) {
+    if (typeof recipient === 'string' && recipient.trim().length > 0) {
+      unique.add(recipient);
+    }
+  }
+  if (unique.size === 0) {
+    unique.add(from);
+  }
+  return Array.from(unique);
 }
 
 /**
@@ -87,29 +110,33 @@ export function computeId(canonical: string): string {
 /**
  * Create a signed envelope.
  * @param type - Message type
- * @param sender - Sender's public key (hex)
+ * @param from - Sender's public key (hex)
  * @param privateKey - Sender's private key (hex) for signing
  * @param payload - The message payload
  * @param timestamp - Timestamp for the envelope (ms), defaults to Date.now()
  * @param inReplyTo - Optional ID of the message being replied to
+ * @param to - Recipient peer ID(s)
  * @returns A signed Envelope
  */
 export function createEnvelope<T>(
   type: MessageType,
-  sender: string,
+  from: string,
   privateKey: string,
   payload: T,
   timestamp: number = Date.now(),
   inReplyTo?: string,
+  to?: string | string[],
 ): Envelope<T> {
-  const canonical = canonicalize(type, sender, timestamp, payload, inReplyTo);
+  const recipients = normalizeRecipients(from, to);
+  const canonical = canonicalize(type, from, recipients, timestamp, payload, inReplyTo);
   const id = computeId(canonical);
   const signature = signMessage(canonical, privateKey);
 
   return {
     id,
     type,
-    sender,
+    from,
+    to: recipients,
     timestamp,
     ...(inReplyTo !== undefined ? { inReplyTo } : {}),
     payload,
@@ -126,10 +153,13 @@ export function createEnvelope<T>(
  * @returns Object with `valid` boolean and optional `reason` for failure
  */
 export function verifyEnvelope(envelope: Envelope): { valid: boolean; reason?: string } {
-  const { id, type, sender, timestamp, payload, signature, inReplyTo } = envelope;
+  const { id, type, from, to, timestamp, payload, signature, inReplyTo } = envelope;
+  if (!from || !Array.isArray(to) || to.length === 0) {
+    return { valid: false, reason: 'invalid_routing_fields' };
+  }
 
-  // Reconstruct canonical form
-  const canonical = canonicalize(type, sender, timestamp, payload, inReplyTo);
+  // Reconstruct canonical form.
+  const canonical = canonicalize(type, from, to, timestamp, payload, inReplyTo);
 
   // Check content-addressed ID
   const expectedId = computeId(canonical);
@@ -137,8 +167,7 @@ export function verifyEnvelope(envelope: Envelope): { valid: boolean; reason?: s
     return { valid: false, reason: 'id_mismatch' };
   }
 
-  // Check signature
-  const sigValid = verifySignature(canonical, signature, sender);
+  const sigValid = verifySignature(canonical, signature, from);
   if (!sigValid) {
     return { valid: false, reason: 'signature_invalid' };
   }

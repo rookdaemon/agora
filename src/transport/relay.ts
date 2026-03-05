@@ -36,7 +36,8 @@ export async function sendViaRelay(
       config.identity.privateKey,
       payload,
       Date.now(),
-      inReplyTo
+      inReplyTo,
+      [peerPublicKey]
     );
     return config.relayClient.send(peerPublicKey, envelope);
   }
@@ -88,7 +89,8 @@ export async function sendViaRelay(
             config.identity.privateKey,
             payload,
             Date.now(),
-            inReplyTo
+            inReplyTo,
+            [peerPublicKey]
           );
 
           // Send message via relay

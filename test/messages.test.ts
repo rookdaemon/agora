@@ -254,7 +254,7 @@ describe('Registry Messages', () => {
       
       // Verify announce envelope
       assert.strictEqual(announceEnvelope.type, 'announce');
-      assert.strictEqual(announceEnvelope.sender, agent1.publicKey);
+      assert.strictEqual(announceEnvelope.from, agent1.publicKey);
       
       // Agent 2 sends discover request
       const discoverPayload: DiscoverPayload = {
@@ -267,7 +267,7 @@ describe('Registry Messages', () => {
       
       // Verify discover envelope
       assert.strictEqual(discoverEnvelope.type, 'discover');
-      assert.strictEqual(discoverEnvelope.sender, agent2.publicKey);
+      assert.strictEqual(discoverEnvelope.from, agent2.publicKey);
       
       // Agent 1 responds with its capabilities
       const responsePayload: DiscoverResponsePayload = {
@@ -294,7 +294,7 @@ describe('Registry Messages', () => {
       
       // Verify response envelope
       assert.strictEqual(responseEnvelope.type, 'response');
-      assert.strictEqual(responseEnvelope.sender, agent1.publicKey);
+      assert.strictEqual(responseEnvelope.from, agent1.publicKey);
       assert.strictEqual(responseEnvelope.inReplyTo, discoverEnvelope.id);
       assert.strictEqual(responseEnvelope.payload.peers.length, 1);
       assert.strictEqual(responseEnvelope.payload.peers[0].publicKey, agent1.publicKey);

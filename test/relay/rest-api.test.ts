@@ -69,19 +69,21 @@ function createMockRelay(
 let envelopeCounter = 0;
 function mockCreateEnvelope(
   type: string,
-  sender: string,
+  from: string,
+  to: string[],
   _privateKey: string,
   payload: unknown,
   timestamp?: number,
   inReplyTo?: string
-): { id: string; type: string; sender: string; timestamp: number; payload: unknown; signature: string; inReplyTo?: string } {
+): { id: string; type: string; from: string; to: string[]; timestamp: number; payload: unknown; signature: string; inReplyTo?: string } {
   return {
     id: `env-${++envelopeCounter}`,
     type,
-    sender,
+    from,
+    to,
     timestamp: timestamp ?? Date.now(),
     payload,
-    signature: `sig-${sender.slice(-4)}`,
+    signature: `sig-${from.slice(-4)}`,
     ...(inReplyTo && { inReplyTo }),
   };
 }

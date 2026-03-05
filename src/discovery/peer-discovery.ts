@@ -67,7 +67,10 @@ export class PeerDiscoveryService extends EventEmitter {
       'peer_list_request',
       this.config.publicKey,
       this.config.privateKey,
-      payload
+      payload,
+      Date.now(),
+      undefined,
+      [this.config.relayPublicKey]
     );
 
     // Send request to relay
@@ -125,7 +128,10 @@ export class PeerDiscoveryService extends EventEmitter {
       'peer_referral',
       this.config.publicKey,
       this.config.privateKey,
-      payload
+      payload,
+      Date.now(),
+      undefined,
+      [recipientPublicKey]
     );
 
     return this.config.relayClient.send(recipientPublicKey, envelope);
@@ -158,7 +164,7 @@ export class PeerDiscoveryService extends EventEmitter {
     }
 
     // Verify sender is the relay
-    if (envelope.sender !== this.config.relayPublicKey) {
+    if (envelope.from !== this.config.relayPublicKey) {
       this.emit('error', new Error('Peer list response not from configured relay'));
       return;
     }

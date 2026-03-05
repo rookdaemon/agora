@@ -37,9 +37,12 @@ All three must pass. CI checks them automatically on every PR.
 ```
 src/
 ├── identity/     # Ed25519 keypair generation and management
-├── message/      # Envelope creation, signing, verification
-├── registry/     # Peer and capability registry
-├── transport/    # HTTP webhook transport layer
+├── message/      # Envelope creation, signing, verification, typed payloads
+├── transport/    # Direct HTTP + relay transport adapters
+├── relay/        # WebSocket relay server/client + optional REST API
+├── discovery/    # Relay-mediated peer discovery
+├── reputation/   # Verification, commit/reveal, trust scoring, sync
+├── service.ts    # High-level service API with transport fallback
 └── cli.ts        # CLI entry point
 ```
 

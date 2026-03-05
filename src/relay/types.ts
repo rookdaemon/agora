@@ -4,7 +4,7 @@ import type { Envelope } from '../message/envelope';
  * Messages sent from client to relay server
  */
 export interface RelayClientMessage {
-  type: 'register' | 'message' | 'broadcast' | 'ping';
+  type: 'register' | 'message' | 'ping';
   publicKey?: string;
   name?: string;
   to?: string;

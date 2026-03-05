@@ -478,21 +478,15 @@ describe('CLI', () => {
       ]);
     });
 
-    it('should attempt to announce to all peers', async () => {
+    it('should be disabled in strict peer-to-peer mode', async () => {
       const result = await runCli(['announce', '--config', testConfigPath]);
 
-      assert.strictEqual(result.exitCode, 0);
-
-      const output = JSON.parse(result.stdout);
-      assert.ok(output.results);
-      assert.ok(Array.isArray(output.results));
-      assert.strictEqual(output.results.length, 1);
-      assert.strictEqual(output.results[0].peer, 'alice');
-      // Will fail because no server is running
-      assert.ok(['failed', 'error'].includes(output.results[0].status));
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('disabled'));
+      assert.ok(result.stderr.includes('strict peer-to-peer'));
     });
 
-    it('should accept custom name and version', async () => {
+    it('should remain disabled even with custom name and version', async () => {
       const result = await runCli([
         'announce',
         '--config', testConfigPath,
@@ -500,29 +494,25 @@ describe('CLI', () => {
         '--version', '2.0.0',
       ]);
 
-      assert.strictEqual(result.exitCode, 0);
-
-      const output = JSON.parse(result.stdout);
-      assert.ok(output.results);
-      assert.ok(Array.isArray(output.results));
+      assert.strictEqual(result.exitCode, 1);
+      assert.ok(result.stderr.includes('disabled'));
     });
 
-    it('should error if no peers configured', async () => {
-      // Create a new config with no peers
+    it('should still show disabled message with no peers configured', async () => {
       const emptyConfigPath = join(testDir, 'empty-config.json');
       await runCli(['init', '--config', emptyConfigPath]);
 
       const result = await runCli(['announce', '--config', emptyConfigPath]);
 
       assert.strictEqual(result.exitCode, 1);
-      assert.ok(result.stderr.includes('No peers configured'));
+      assert.ok(result.stderr.includes('disabled'));
     });
 
-    it('should error if config not found', async () => {
+    it('should return disabled message before config checks', async () => {
       const result = await runCli(['announce', '--config', join(testDir, 'missing.json')]);
 
       assert.strictEqual(result.exitCode, 1);
-      assert.ok(result.stderr.includes('Config file not found'));
+      assert.ok(result.stderr.includes('disabled'));
     });
   });
 

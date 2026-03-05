@@ -49,7 +49,7 @@ export function createVerification(
   }
   
   // Create signed envelope with type 'verification'
-  const envelope = createEnvelope('verification', verifier, privateKey, payload, timestamp);
+  const envelope = createEnvelope('verification', verifier, privateKey, payload, timestamp, undefined, [verifier]);
   
   // Return verification record
   const record: VerificationRecord = {
@@ -104,7 +104,8 @@ export function verifyVerificationSignature(
   const envelope = {
     id: record.id,
     type: 'verification' as const,
-    sender: record.verifier,
+    from: record.verifier,
+    to: [record.verifier],
     timestamp: record.timestamp,
     payload,
     signature: record.signature,

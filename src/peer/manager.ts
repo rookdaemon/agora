@@ -129,24 +129,6 @@ export class PeerManager extends EventEmitter {
   }
 
   /**
-   * Broadcast a message to all connected peers (both incoming and outgoing)
-   * @param envelope - The envelope to broadcast
-   */
-  broadcast(envelope: Envelope): void {
-    // Broadcast to server peers
-    if (this.server) {
-      this.server.broadcast(envelope);
-    }
-
-    // Broadcast to client peers
-    for (const client of this.clients.values()) {
-      if (client.isConnected()) {
-        client.send(envelope);
-      }
-    }
-  }
-
-  /**
    * Get list of all connected peers with their public keys
    * @returns Array of peer information
    */

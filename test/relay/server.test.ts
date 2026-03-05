@@ -70,7 +70,7 @@ describe('RelayServer', () => {
   it('should deliver messages to all sessions of the recipient', async () => {
     const alice = generateKeyPair();
     const bob = generateKeyPair();
-    const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { text: 'hello all sessions' });
+    const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { text: 'hello all sessions' }, Date.now(), undefined, [bob.publicKey]);
 
     const sender = new WebSocket(`ws://localhost:${TEST_PORT}`);
     const recipient1 = new WebSocket(`ws://localhost:${TEST_PORT}`);
@@ -225,7 +225,7 @@ describe('RelayServer', () => {
   it('should drop duplicate envelope IDs before forwarding', async () => {
     const alice = generateKeyPair();
     const bob = generateKeyPair();
-    const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { text: 'dedup me' });
+    const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { text: 'dedup me' }, Date.now(), undefined, [bob.publicKey]);
 
     const sender = new WebSocket(`ws://localhost:${TEST_PORT}`);
     const recipient = new WebSocket(`ws://localhost:${TEST_PORT}`);
@@ -311,7 +311,7 @@ describe('RelayServer', () => {
     });
 
     for (let i = 0; i < 5; i++) {
-      const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { seq: i });
+      const envelope = createEnvelope('publish', alice.publicKey, alice.privateKey, { seq: i }, Date.now(), undefined, [bob.publicKey]);
       sender.send(JSON.stringify({ type: 'message', to: bob.publicKey, envelope }));
     }
 
@@ -373,7 +373,7 @@ describe('RelayServer with file-backed storage', () => {
 
   it('should queue message for storage-enabled offline peer without error', async () => {
     const bob = generateKeyPair();
-    const envelope = createEnvelope('publish', bob.publicKey, bob.privateKey, { text: 'offline message' });
+    const envelope = createEnvelope('publish', bob.publicKey, bob.privateKey, { text: 'offline message' }, Date.now(), undefined, ['alice']);
 
     const sender = new WebSocket(`ws://localhost:${STORAGE_PORT}`);
     await new Promise<void>((r) => sender.on('open', r));
@@ -399,7 +399,7 @@ describe('RelayServer with file-backed storage', () => {
 
   it('should deliver queued messages when storage-enabled peer reconnects', async () => {
     const bob = generateKeyPair();
-    const envelope = createEnvelope('publish', bob.publicKey, bob.privateKey, { text: 'stored for alice' });
+    const envelope = createEnvelope('publish', bob.publicKey, bob.privateKey, { text: 'stored for alice' }, Date.now(), undefined, ['alice']);
 
     const sender = new WebSocket(`ws://localhost:${STORAGE_PORT}`);
     await new Promise<void>((r) => sender.on('open', r));
@@ -492,7 +492,7 @@ describe('RelayServer with file-backed storage', () => {
 
   it('should still return error for non-storage-enabled offline peers', async () => {
     const bob = generateKeyPair();
-    const envelope = createEnvelope('publish', bob.publicKey, bob.privateKey, { x: 1 });
+    const envelope = createEnvelope('publish', bob.publicKey, bob.privateKey, { x: 1 }, Date.now(), undefined, ['charlie']);
 
     const sender = new WebSocket(`ws://localhost:${STORAGE_PORT}`);
     await new Promise<void>((r) => sender.on('open', r));

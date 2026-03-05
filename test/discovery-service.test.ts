@@ -21,7 +21,7 @@ describe('DiscoveryService', () => {
       const envelope = service.announce(capabilities);
       
       assert.strictEqual(envelope.type, 'capability_announce');
-      assert.strictEqual(envelope.sender, identity.publicKey);
+      assert.strictEqual(envelope.from, identity.publicKey);
       assert.deepStrictEqual(envelope.payload.capabilities, capabilities);
       assert.strictEqual(envelope.payload.publicKey, identity.publicKey);
       assert.ok(envelope.payload.metadata?.lastSeen);

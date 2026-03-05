@@ -48,7 +48,7 @@ export function createCommit(
   };
   
   // Create signed envelope with type 'commit'
-  const envelope = createEnvelope('commit', agent, privateKey, payload, timestamp);
+  const envelope = createEnvelope('commit', agent, privateKey, payload, timestamp, undefined, [agent]);
   
   // Return commit record
   return {
@@ -97,7 +97,7 @@ export function createReveal(
   }
   
   // Create signed envelope with type 'reveal'
-  const envelope = createEnvelope('reveal', agent, privateKey, payload, timestamp);
+  const envelope = createEnvelope('reveal', agent, privateKey, payload, timestamp, undefined, [agent]);
   
   // Return reveal record
   const record: RevealRecord = {

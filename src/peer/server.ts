@@ -126,17 +126,6 @@ export class PeerServer extends EventEmitter {
   }
 
   /**
-   * Broadcast a message to all connected peers
-   */
-  broadcast(envelope: Envelope): void {
-    for (const [publicKey, peer] of this.peers) {
-      if (peer.socket.readyState === WebSocket.OPEN) {
-        this.send(publicKey, envelope);
-      }
-    }
-  }
-
-  /**
    * Handle incoming connection
    */
   private handleConnection(socket: WebSocket): void {
@@ -147,7 +136,10 @@ export class PeerServer extends EventEmitter {
       'announce',
       this.identity.publicKey,
       this.identity.privateKey,
-      this.announcePayload
+      this.announcePayload,
+      Date.now(),
+      undefined,
+      [this.identity.publicKey]
     );
     socket.send(JSON.stringify(announceEnvelope));
 
@@ -165,7 +157,7 @@ export class PeerServer extends EventEmitter {
         // First message should be an announce
         if (!peerPublicKey) {
           if (envelope.type === 'announce') {
-            peerPublicKey = envelope.sender;
+            peerPublicKey = envelope.from;
             const payload = envelope.payload as AnnouncePayload;
             
             const peer: ConnectedPeer = {
@@ -182,7 +174,7 @@ export class PeerServer extends EventEmitter {
         }
 
         // Verify the message is from the announced peer
-        if (envelope.sender !== peerPublicKey) {
+        if (envelope.from !== peerPublicKey) {
           // Drop messages from wrong sender
           return;
         }
