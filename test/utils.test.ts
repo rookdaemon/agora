@@ -4,6 +4,7 @@ import {
   shorten,
   expand,
   compactInlineReferences,
+  compactKnownInlineReferences,
   expandInlineReferences,
   sanitizeText,
   resolveDisplayName,
@@ -53,6 +54,14 @@ describe('peer reference helpers', () => {
 
     const compacted = compactInlineReferences(`hello @${ALICE}`, peers);
     assert.strictEqual(compacted, 'hello @alice...99990000');
+  });
+
+  it('known-only compaction leaves unknown full IDs unchanged', () => {
+    const peers = directory();
+    const unknown = '302a300506032b6570032100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+
+    const compacted = compactKnownInlineReferences(`hello @${ALICE} @${unknown}`, peers);
+    assert.strictEqual(compacted, `hello @alice...99990000 @${unknown}`);
   });
 });
 

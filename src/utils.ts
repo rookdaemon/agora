@@ -114,6 +114,20 @@ export function compactInlineReferences(text: string, directory: PeerReferenceDi
 }
 
 /**
+ * Compact inline @<full-id> references only when the full ID exists in the
+ * provided directory. Unknown IDs remain unchanged.
+ */
+export function compactKnownInlineReferences(text: string, directory: PeerReferenceDirectory): string {
+  return text.replace(/@([0-9a-fA-F]{16,})/g, (_full, id: string) => {
+    const known = findById(id, directory);
+    if (!known) {
+      return `@${id}`;
+    }
+    return `@${shorten(id, directory)}`;
+  });
+}
+
+/**
  * Strip characters that can crash downstream width/segmenter logic in UIs.
  * Removes control chars (except newline/tab) and replaces lone surrogates.
  */
