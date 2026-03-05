@@ -305,3 +305,13 @@ Before committing changes:
 - **CONTRIBUTING.md**: Contribution guidelines and code of conduct
 - **SECURITY.md**: Security architecture and threat model
 - **package.json**: Build scripts, dependencies, package metadata
+
+
+## Release Process
+For releases of the agora package, create/push git tags only; do not run npm publish.
+
+1. Update version in `package.json` (e.g., from `0.5.0` to `0.5.1`)
+2. Commit the version bump with message `chore: bump version to 0.5.1`
+3. Push to `main` branch
+4. Create a git tag for the new version: `git tag v0.5.1`
+5. Push the tag to the remote repository: `git push origin v0.5.1`
