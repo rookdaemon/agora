@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
-import { verifyEnvelope, type Envelope } from '../message/envelope';
+import { createEnvelope, verifyEnvelope, type Envelope, type MessageType } from '../message/envelope';
 import type { RelayClientMessage, RelayServerMessage, RelayPeer } from './types';
 
 /**
@@ -114,6 +114,43 @@ export class RelayClient extends EventEmitter {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  /**
+   * Create a signed envelope and send it to each recipient.
+   * One envelope is created per recipient (each with that recipient in the `to` field).
+   * Returns the list of failures (empty means all succeeded).
+   */
+  async sendToRecipients(
+    recipients: string[],
+    type: MessageType,
+    payload: unknown,
+    inReplyTo?: string,
+  ): Promise<{ ok: boolean; errors: Array<{ recipient: string; error: string }> }> {
+    if (!this.connected()) {
+      return { ok: false, errors: [{ recipient: '*', error: 'Not connected to relay' }] };
+    }
+
+    const unique = Array.from(new Set(recipients.filter(Boolean)));
+    const errors: Array<{ recipient: string; error: string }> = [];
+
+    for (const recipient of unique) {
+      const envelope = createEnvelope(
+        type,
+        this.config.publicKey,
+        this.config.privateKey,
+        payload,
+        Date.now(),
+        inReplyTo,
+        recipient,
+      );
+      const result = await this.send(recipient, envelope);
+      if (!result.ok) {
+        errors.push({ recipient, error: result.error ?? 'unknown error' });
+      }
+    }
+
+    return { ok: errors.length === 0, errors };
   }
 
   /**

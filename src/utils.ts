@@ -128,6 +128,19 @@ export function compactKnownInlineReferences(text: string, directory: PeerRefere
 }
 
 /**
+ * Extract text content from an envelope payload.
+ * Handles { text: string } objects, plain strings, and fallback to JSON.
+ * All output is sanitized.
+ */
+export function extractTextFromPayload(payload: unknown): string {
+  if (payload && typeof payload === 'object' && 'text' in payload && typeof (payload as { text: unknown }).text === 'string') {
+    return sanitizeText((payload as { text: string }).text);
+  }
+  if (typeof payload === 'string') return sanitizeText(payload);
+  return sanitizeText(JSON.stringify(payload ?? ''));
+}
+
+/**
  * Strip characters that can crash downstream width/segmenter logic in UIs.
  * Removes control chars (except newline/tab) and replaces lone surrogates.
  */

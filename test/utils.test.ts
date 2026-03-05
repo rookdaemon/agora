@@ -8,6 +8,7 @@ import {
   expandInlineReferences,
   sanitizeText,
   resolveDisplayName,
+  extractTextFromPayload,
   type PeerReferenceDirectory,
 } from '../src/utils';
 
@@ -82,5 +83,28 @@ describe('display/sanitization helpers', () => {
 
   it('resolveDisplayName ignores short-id relay names', () => {
     assert.strictEqual(resolveDisplayName('unknown', '...1234abcd', directory()), undefined);
+  });
+});
+
+describe('extractTextFromPayload', () => {
+  it('extracts text from { text } payload', () => {
+    assert.strictEqual(extractTextFromPayload({ text: 'hello', dm: true }), 'hello');
+  });
+
+  it('returns plain string payload as-is', () => {
+    assert.strictEqual(extractTextFromPayload('plain message'), 'plain message');
+  });
+
+  it('JSON-stringifies non-text objects', () => {
+    assert.strictEqual(extractTextFromPayload({ foo: 42 }), '{"foo":42}');
+  });
+
+  it('sanitizes extracted text', () => {
+    assert.strictEqual(extractTextFromPayload({ text: 'a\x00b' }), 'ab');
+  });
+
+  it('handles null/undefined', () => {
+    assert.strictEqual(extractTextFromPayload(null), '""');
+    assert.strictEqual(extractTextFromPayload(undefined), '""');
   });
 });
