@@ -7,7 +7,7 @@
  * @returns "..." followed by the last 8 characters of the key
  */
 export function shortKey(publicKey: string): string {
-  return "..." + publicKey.slice(-8);
+  return "@" + publicKey.slice(-8);
 }
 
 export interface PeerReferenceEntry {
@@ -40,21 +40,22 @@ function findById(id: string, directory?: PeerReferenceDirectory): PeerReference
 /**
  * Shorten a full peer ID for display/reference.
  * Canonical form:
- * - Configured name => "name...<last8>"
- * - Unknown/no-name => "...<last8>"
+ * - Configured name => "name@<last8>"
+ * - Unknown/no-name => "@<last8>"
  */
 export function shorten(id: string, directory?: PeerReferenceDirectory): string {
   const suffix = id.slice(-8);
   const entry = findById(id, directory);
   if (!entry?.name) {
-    return `...${suffix}`;
+    return `@${suffix}`;
   }
-  return `${entry.name}...${suffix}`;
+  return `${entry.name}@${suffix}`;
 }
 
 /**
  * Expand a short peer reference to a full ID.
- * Supports: full ID, unique name, ...last8, and name...last8.
+ * Supports: full ID, unique name, name@last8, @last8.
+ * Also supports legacy name...last8 and ...last8 forms.
  */
 export function expand(shortId: string, directory: PeerReferenceDirectory): string | undefined {
   const entries = toDirectoryEntries(directory);
@@ -68,6 +69,29 @@ export function expand(shortId: string, directory: PeerReferenceDirectory): stri
     return direct.publicKey;
   }
 
+  // name@suffix8 (current canonical form)
+  const namedAtSuffix = token.match(/^(.+)@([0-9a-fA-F]{8})$/);
+  if (namedAtSuffix) {
+    const [, name, suffix] = namedAtSuffix;
+    const matches = entries.filter((entry) => entry.name === name && entry.publicKey.toLowerCase().endsWith(suffix.toLowerCase()));
+    if (matches.length === 1) {
+      return matches[0].publicKey;
+    }
+    return undefined;
+  }
+
+  // @suffix8 (current canonical form for unknown peers)
+  const atSuffixOnly = token.match(/^@([0-9a-fA-F]{8})$/);
+  if (atSuffixOnly) {
+    const [, suffix] = atSuffixOnly;
+    const matches = entries.filter((entry) => entry.publicKey.toLowerCase().endsWith(suffix.toLowerCase()));
+    if (matches.length === 1) {
+      return matches[0].publicKey;
+    }
+    return undefined;
+  }
+
+  // Legacy: name...suffix8
   const namedWithSuffix = token.match(/^(.+)\.\.\.([0-9a-fA-F]{8})$/);
   if (namedWithSuffix) {
     const [, name, suffix] = namedWithSuffix;
@@ -78,6 +102,7 @@ export function expand(shortId: string, directory: PeerReferenceDirectory): stri
     return undefined;
   }
 
+  // Legacy: ...suffix8
   const suffixOnly = token.match(/^\.\.\.([0-9a-fA-F]{8})$/);
   if (suffixOnly) {
     const [, suffix] = suffixOnly;
@@ -153,23 +178,17 @@ export function sanitizeText(text: string): string {
 
 /**
  * Resolve a display name for a peer.
- * Priority order:
- * 1. configured name in directory for the exact public key
- * 2. relay-broadcast name (if not already a short-id token)
- * 3. undefined
+ * Only returns locally configured names from the peer directory.
+ * Sender-claimed names are never used — identity must be derived from verified keys.
  */
 export function resolveDisplayName(
   publicKey: string,
-  peerName: string | undefined,
+  _peerName?: string | undefined,
   directory?: PeerReferenceDirectory,
 ): string | undefined {
   const entry = findById(publicKey, directory);
   if (entry?.name) {
     return entry.name;
-  }
-
-  if (peerName && !peerName.startsWith('...')) {
-    return sanitizeText(peerName);
   }
 
   return undefined;
@@ -213,9 +232,9 @@ export function resolveBroadcastName(
 }
 
 /**
- * Formats a display name using the canonical short-reference form.
- * If name exists: "name...3f8c2247"  (same form as shorten())
- * If no name: "...3f8c2247" (short ID only)
+ * Formats a display name using the canonical moniker form.
+ * If name exists: "name@3f8c2247"  (same form as shorten())
+ * If no name: "@3f8c2247" (short ID only)
  *
  * @param name - Optional name to display (should not be a short ID)
  * @param publicKey - The public key to use for short ID
@@ -224,10 +243,10 @@ export function resolveBroadcastName(
 export function formatDisplayName(name: string | undefined, publicKey: string): string {
   const suffix = publicKey.slice(-8);
   // If name is undefined, empty, or is already a short ID, return only short ID
-  if (!name || name.trim() === '' || name.startsWith('...')) {
-    return `...${suffix}`;
+  if (!name || name.trim() === '' || name.startsWith('...') || name.startsWith('@')) {
+    return `@${suffix}`;
   }
-  return `${name}...${suffix}`;
+  return `${name}@${suffix}`;
 }
 
 /**

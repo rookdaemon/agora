@@ -32,17 +32,23 @@ function directory(includeDuplicateBob = false): PeerReferenceDirectory {
 }
 
 describe('peer reference helpers', () => {
-  it('shorten uses canonical name...suffix when name exists', () => {
-    assert.strictEqual(shorten(ALICE, directory()), 'alice...99990000');
+  it('shorten uses canonical name@suffix when name exists', () => {
+    assert.strictEqual(shorten(ALICE, directory()), 'alice@99990000');
   });
 
-  it('shorten falls back to ...suffix when name is unavailable', () => {
-    assert.strictEqual(shorten(ALICE), '...99990000');
+  it('shorten falls back to @suffix when name is unavailable', () => {
+    assert.strictEqual(shorten(ALICE), '@99990000');
   });
 
-  it('expand resolves full id, suffix-only, and name...suffix', () => {
+  it('expand resolves full id, @suffix-only, and name@suffix', () => {
     const peers = directory();
     assert.strictEqual(expand(ALICE, peers), ALICE);
+    assert.strictEqual(expand('@99990000', peers), ALICE);
+    assert.strictEqual(expand('alice@99990000', peers), ALICE);
+  });
+
+  it('expand resolves legacy ...suffix and name...suffix forms', () => {
+    const peers = directory();
     assert.strictEqual(expand('...99990000', peers), ALICE);
     assert.strictEqual(expand('alice...99990000', peers), ALICE);
   });
@@ -54,11 +60,11 @@ describe('peer reference helpers', () => {
 
   it('inline helpers expand and compact @references', () => {
     const peers = directory();
-    const expanded = expandInlineReferences('ping @alice...99990000 and @unknown', peers);
+    const expanded = expandInlineReferences('ping @alice@99990000 and @unknown', peers);
     assert.strictEqual(expanded, `ping @${ALICE} and @unknown`);
 
     const compacted = compactInlineReferences(`hello @${ALICE}`, peers);
-    assert.strictEqual(compacted, 'hello @alice...99990000');
+    assert.strictEqual(compacted, 'hello @alice@99990000');
   });
 
   it('known-only compaction leaves unknown full IDs unchanged', () => {
@@ -66,7 +72,7 @@ describe('peer reference helpers', () => {
     const unknown = '302a300506032b6570032100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
 
     const compacted = compactKnownInlineReferences(`hello @${ALICE} @${unknown}`, peers);
-    assert.strictEqual(compacted, `hello @alice...99990000 @${unknown}`);
+    assert.strictEqual(compacted, `hello @alice@99990000 @${unknown}`);
   });
 });
 
@@ -81,8 +87,8 @@ describe('display/sanitization helpers', () => {
     assert.strictEqual(resolveDisplayName(ALICE, 'relay-alice', peers), 'alice');
   });
 
-  it('resolveDisplayName falls back to sanitized relay name', () => {
-    assert.strictEqual(resolveDisplayName('unknown', 'relay\x00name', directory()), 'relayname');
+  it('resolveDisplayName ignores relay name hints for unknown peers', () => {
+    assert.strictEqual(resolveDisplayName('unknown', 'relay-name', directory()), undefined);
   });
 
   it('resolveDisplayName ignores short-id relay names', () => {
@@ -91,20 +97,24 @@ describe('display/sanitization helpers', () => {
 });
 
 describe('formatDisplayName', () => {
-  it('uses canonical name...suffix when name exists', () => {
-    assert.strictEqual(formatDisplayName('rook', ALICE), 'rook...99990000');
+  it('uses canonical name@suffix when name exists', () => {
+    assert.strictEqual(formatDisplayName('rook', ALICE), 'rook@99990000');
   });
 
-  it('returns ...suffix when name is undefined', () => {
-    assert.strictEqual(formatDisplayName(undefined, ALICE), '...99990000');
+  it('returns @suffix when name is undefined', () => {
+    assert.strictEqual(formatDisplayName(undefined, ALICE), '@99990000');
   });
 
-  it('returns ...suffix when name is empty string', () => {
-    assert.strictEqual(formatDisplayName('', ALICE), '...99990000');
+  it('returns @suffix when name is empty string', () => {
+    assert.strictEqual(formatDisplayName('', ALICE), '@99990000');
   });
 
-  it('returns ...suffix when name is already a short ID', () => {
-    assert.strictEqual(formatDisplayName('...99990000', ALICE), '...99990000');
+  it('returns @suffix when name is already a short ID', () => {
+    assert.strictEqual(formatDisplayName('@99990000', ALICE), '@99990000');
+  });
+
+  it('returns @suffix for legacy ...suffix name', () => {
+    assert.strictEqual(formatDisplayName('...99990000', ALICE), '@99990000');
   });
 });
 
@@ -133,26 +143,26 @@ describe('extractTextFromPayload', () => {
 
 describe('formatConversationLine', () => {
   it('formats a line with FROM/TO metadata', () => {
-    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: ['bob...ffff1234'], text: 'hello' };
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice@99990000', to: ['bob@ffff1234'], text: 'hello' };
     assert.strictEqual(
       formatConversationLine(entry),
-      '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234 hello'
+      '[2023-11-14T22:13:20.000Z] **FROM:** alice@99990000 **TO:** bob@ffff1234 hello'
     );
   });
 
   it('formats multiple recipients separated by commas', () => {
-    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: ['bob...ffff1234', 'carol...11112222'], text: 'hi all' };
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice@99990000', to: ['bob@ffff1234', 'carol@11112222'], text: 'hi all' };
     const line = formatConversationLine(entry);
-    assert.ok(line.includes('**TO:** bob...ffff1234, carol...11112222'));
+    assert.ok(line.includes('**TO:** bob@ffff1234, carol@11112222'));
   });
 
   it('formats (none) when to is empty', () => {
-    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: [], text: 'broadcast' };
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice@99990000', to: [], text: 'broadcast' };
     assert.ok(formatConversationLine(entry).includes('**TO:** (none)'));
   });
 
   it('replaces newlines in text', () => {
-    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: ['bob...ffff1234'], text: 'line1\nline2' };
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice@99990000', to: ['bob@ffff1234'], text: 'line1\nline2' };
     const line = formatConversationLine(entry);
     assert.ok(!line.includes('\n'));
     assert.ok(line.includes('line1 line2'));
@@ -161,25 +171,25 @@ describe('formatConversationLine', () => {
 
 describe('parseConversationLine', () => {
   it('parses a valid FROM/TO line', () => {
-    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234 hello';
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice@99990000 **TO:** bob@ffff1234 hello';
     const entry = parseConversationLine(line);
     assert.ok(entry);
-    assert.strictEqual(entry.from, 'alice...99990000');
-    assert.deepStrictEqual(entry.to, ['bob...ffff1234']);
+    assert.strictEqual(entry.from, 'alice@99990000');
+    assert.deepStrictEqual(entry.to, ['bob@ffff1234']);
     assert.strictEqual(entry.text, 'hello');
     assert.strictEqual(entry.timestamp, 1700000000000);
   });
 
   it('parses multiple recipients', () => {
-    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234, carol...11112222 hi all';
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice@99990000 **TO:** bob@ffff1234, carol@11112222 hi all';
     const entry = parseConversationLine(line);
     assert.ok(entry);
-    assert.deepStrictEqual(entry.to, ['bob...ffff1234', 'carol...11112222']);
+    assert.deepStrictEqual(entry.to, ['bob@ffff1234', 'carol@11112222']);
     assert.strictEqual(entry.text, 'hi all');
   });
 
   it('parses (none) recipients as empty array', () => {
-    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** (none) broadcast';
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice@99990000 **TO:** (none) broadcast';
     const entry = parseConversationLine(line);
     assert.ok(entry);
     assert.deepStrictEqual(entry.to, []);
@@ -187,7 +197,7 @@ describe('parseConversationLine', () => {
   });
 
   it('handles empty text', () => {
-    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234';
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice@99990000 **TO:** bob@ffff1234';
     const entry = parseConversationLine(line);
     assert.ok(entry);
     assert.strictEqual(entry.text, '');
@@ -204,7 +214,7 @@ describe('parseConversationLine', () => {
   });
 
   it('roundtrips through format and parse', () => {
-    const original: ConversationEntry = { timestamp: 1700000000000, from: 'dave...abc12345', to: ['eve...def67890'], text: 'test message' };
+    const original: ConversationEntry = { timestamp: 1700000000000, from: 'dave@abc12345', to: ['eve@def67890'], text: 'test message' };
     const line = formatConversationLine(original);
     const parsed = parseConversationLine(line);
     assert.ok(parsed);
@@ -215,7 +225,7 @@ describe('parseConversationLine', () => {
   });
 
   it('roundtrips with multiple recipients', () => {
-    const original: ConversationEntry = { timestamp: 1700000000000, from: 'me...12345678', to: ['alice...99990000', 'bob...ffff1234'], text: 'group msg' };
+    const original: ConversationEntry = { timestamp: 1700000000000, from: 'me@12345678', to: ['alice@99990000', 'bob@ffff1234'], text: 'group msg' };
     const line = formatConversationLine(original);
     const parsed = parseConversationLine(line);
     assert.ok(parsed);

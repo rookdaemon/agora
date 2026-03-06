@@ -1,4 +1,5 @@
 export * from './identity/keypair';
+export * from './identity/seen-keys';
 export * from './message/envelope';
 export * from './registry/capability';
 export * from './registry/peer';
