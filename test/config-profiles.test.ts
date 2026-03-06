@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   getProfileConfigPath,
-  getConfigDir,
   listProfiles,
   exportConfig,
   importConfig,
