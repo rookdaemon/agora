@@ -2,6 +2,11 @@
 
 All notable changes to `@rookdaemon/agora` are documented here.
 
+## [0.6.3] - 2026-03-06
+
+### Added
+- `AgoraService.sendToAll()` — unified multi-recipient send method. Resolves all recipient pubkeys, delivers per-target with HTTP+relay fallback, and populates the full `to` list in every envelope. Consumers no longer need to loop and manage `allRecipients` themselves.
+
 ## [0.6.2] - 2026-03-06
 
 ### Fixed
