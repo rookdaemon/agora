@@ -10,7 +10,10 @@ import {
   resolveDisplayName,
   formatDisplayName,
   extractTextFromPayload,
+  formatConversationLine,
+  parseConversationLine,
   type PeerReferenceDirectory,
+  type ConversationEntry,
 } from '../src/utils';
 
 const ALICE = '302a300506032b6570032100aaaabbbbccccddddeeeeffff1111222233334444555566667777888899990000';
@@ -125,5 +128,97 @@ describe('extractTextFromPayload', () => {
   it('handles null/undefined', () => {
     assert.strictEqual(extractTextFromPayload(null), '""');
     assert.strictEqual(extractTextFromPayload(undefined), '""');
+  });
+});
+
+describe('formatConversationLine', () => {
+  it('formats a line with FROM/TO metadata', () => {
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: ['bob...ffff1234'], text: 'hello' };
+    assert.strictEqual(
+      formatConversationLine(entry),
+      '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234 hello'
+    );
+  });
+
+  it('formats multiple recipients separated by commas', () => {
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: ['bob...ffff1234', 'carol...11112222'], text: 'hi all' };
+    const line = formatConversationLine(entry);
+    assert.ok(line.includes('**TO:** bob...ffff1234, carol...11112222'));
+  });
+
+  it('formats (none) when to is empty', () => {
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: [], text: 'broadcast' };
+    assert.ok(formatConversationLine(entry).includes('**TO:** (none)'));
+  });
+
+  it('replaces newlines in text', () => {
+    const entry: ConversationEntry = { timestamp: 1700000000000, from: 'alice...99990000', to: ['bob...ffff1234'], text: 'line1\nline2' };
+    const line = formatConversationLine(entry);
+    assert.ok(!line.includes('\n'));
+    assert.ok(line.includes('line1 line2'));
+  });
+});
+
+describe('parseConversationLine', () => {
+  it('parses a valid FROM/TO line', () => {
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234 hello';
+    const entry = parseConversationLine(line);
+    assert.ok(entry);
+    assert.strictEqual(entry.from, 'alice...99990000');
+    assert.deepStrictEqual(entry.to, ['bob...ffff1234']);
+    assert.strictEqual(entry.text, 'hello');
+    assert.strictEqual(entry.timestamp, 1700000000000);
+  });
+
+  it('parses multiple recipients', () => {
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234, carol...11112222 hi all';
+    const entry = parseConversationLine(line);
+    assert.ok(entry);
+    assert.deepStrictEqual(entry.to, ['bob...ffff1234', 'carol...11112222']);
+    assert.strictEqual(entry.text, 'hi all');
+  });
+
+  it('parses (none) recipients as empty array', () => {
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** (none) broadcast';
+    const entry = parseConversationLine(line);
+    assert.ok(entry);
+    assert.deepStrictEqual(entry.to, []);
+    assert.strictEqual(entry.text, 'broadcast');
+  });
+
+  it('handles empty text', () => {
+    const line = '[2023-11-14T22:13:20.000Z] **FROM:** alice...99990000 **TO:** bob...ffff1234';
+    const entry = parseConversationLine(line);
+    assert.ok(entry);
+    assert.strictEqual(entry.text, '');
+  });
+
+  it('returns null for invalid lines', () => {
+    assert.strictEqual(parseConversationLine(''), null);
+    assert.strictEqual(parseConversationLine('not a valid line'), null);
+    assert.strictEqual(parseConversationLine('[bad-date] **FROM:** a **TO:** b text'), null);
+  });
+
+  it('returns null for old DM-format lines', () => {
+    assert.strictEqual(parseConversationLine('[2023-11-14T22:13:20.000Z] [Alice] [DM] hello'), null);
+  });
+
+  it('roundtrips through format and parse', () => {
+    const original: ConversationEntry = { timestamp: 1700000000000, from: 'dave...abc12345', to: ['eve...def67890'], text: 'test message' };
+    const line = formatConversationLine(original);
+    const parsed = parseConversationLine(line);
+    assert.ok(parsed);
+    assert.strictEqual(parsed.from, original.from);
+    assert.deepStrictEqual(parsed.to, original.to);
+    assert.strictEqual(parsed.text, original.text);
+    assert.strictEqual(parsed.timestamp, original.timestamp);
+  });
+
+  it('roundtrips with multiple recipients', () => {
+    const original: ConversationEntry = { timestamp: 1700000000000, from: 'me...12345678', to: ['alice...99990000', 'bob...ffff1234'], text: 'group msg' };
+    const line = formatConversationLine(original);
+    const parsed = parseConversationLine(line);
+    assert.ok(parsed);
+    assert.deepStrictEqual(parsed.to, original.to);
   });
 });

@@ -229,3 +229,40 @@ export function formatDisplayName(name: string | undefined, publicKey: string): 
   }
   return `${name}...${suffix}`;
 }
+
+/**
+ * A conversation entry with FROM/TO metadata, used for CONVERSATION.md formatting.
+ */
+export interface ConversationEntry {
+  timestamp: number;
+  from: string;
+  to: string[];
+  text: string;
+}
+
+/**
+ * Format a conversation entry as a single line for CONVERSATION.md.
+ * Format: [ISO_TIMESTAMP] **FROM:** sender **TO:** recipient1, recipient2 text
+ */
+export function formatConversationLine(entry: ConversationEntry): string {
+  const ts = new Date(entry.timestamp).toISOString();
+  const toList = entry.to.length > 0 ? entry.to.join(', ') : '(none)';
+  const safeText = entry.text.replace(/\r?\n/g, ' ');
+  return `[${ts}] **FROM:** ${entry.from} **TO:** ${toList} ${safeText}`;
+}
+
+/**
+ * Parse a single CONVERSATION.md line back into a ConversationEntry.
+ * Returns null if the line doesn't match the expected format.
+ */
+export function parseConversationLine(line: string): ConversationEntry | null {
+  const match = line.match(
+    /^\[([^\]]+)\] \*\*FROM:\*\* (\S+) \*\*TO:\*\* ([^\s,]+(?:, [^\s,]+)*|\(none\))(?: (.*))?$/
+  );
+  if (!match) return null;
+  const [, ts, from, toRaw, text] = match;
+  const timestamp = new Date(ts).getTime();
+  if (isNaN(timestamp)) return null;
+  const to = toRaw === '(none)' ? [] : toRaw.split(', ').filter(Boolean);
+  return { timestamp, from, to, text: text ?? '' };
+}
