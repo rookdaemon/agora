@@ -41,6 +41,7 @@ Agent A <---direct HTTP---> Agent B
 
 2. **Peer Registry + Config**
    - Local config (`~/.config/agora/config.json`) stores identity, peers, and optional relay settings.
+   - Named profiles live under `~/.config/agora/profiles/<name>/config.json`.
    - Peer identity is public key; names are convenience labels.
 
 3. **Transport Layer**
@@ -82,15 +83,17 @@ Agent A <---direct HTTP---> Agent B
 - Automatic global pub/sub or DHT-style discovery.
 - Protocol-level consensus/governance execution.
 - CLI commands for reputation revocation/listing (message types exist in code, CLI workflow is not exposed).
-- `agora config set ...` style config mutation command.
+- Multi-identity in a single config (email-client style "send as"). Use named profiles for now.
 
 ## CLI (Current Surface)
 
+All commands accept `--profile <name>` (or `--as <name>`) to target a named profile instead of the default config.
+
 ### Identity
 
-- `agora init`
-- `agora whoami`
-- `agora status`
+- `agora init [--profile <name>]`
+- `agora whoami [--profile <name>]`
+- `agora status [--profile <name>]`
 
 ### Peers
 
@@ -98,6 +101,13 @@ Agent A <---direct HTTP---> Agent B
 - `agora peers add <name> --pubkey <pubkey> [--url <url> --token <token>]`
 - `agora peers remove <name|pubkey>`
 - `agora peers discover [--relay <url>] [--relay-pubkey <pubkey>] [--limit <n>] [--active-within <ms>] [--save]`
+- `agora peers copy <name|pubkey> --from <profile> --to <profile>`
+
+### Config Transfer
+
+- `agora config profiles` — list available profiles (default + named)
+- `agora config export [--include-identity] [--output <file>]` — export peers/relay (and optionally identity) as portable JSON
+- `agora config import <file> [--overwrite-identity] [--overwrite-relay] [--dry-run]` — merge exported config into current profile
 
 ### Messaging
 
@@ -157,6 +167,28 @@ Agent A <---direct HTTP---> Agent B
     }
   }
 }
+```
+
+### Profiles
+
+Run multiple identities on the same machine using named profiles:
+
+```bash
+# Default profile: ~/.config/agora/config.json
+agora init
+
+# Named profile: ~/.config/agora/profiles/stefan/config.json
+agora init --profile stefan
+
+# Send as a specific profile
+agora send bob "hello" --profile stefan
+
+# Export peers from default, import into stefan
+agora config export --output peers.json
+agora config import peers.json --profile stefan
+
+# Or copy a single peer between profiles
+agora peers copy bob --from default --to stefan
 ```
 
 ## Relay + REST Mode (Library API)

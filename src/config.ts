@@ -1,6 +1,6 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, join, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 
 /**
@@ -161,4 +161,160 @@ export async function loadAgoraConfigAsync(path?: string): Promise<AgoraConfig> 
   }
 
   return parseConfig(config);
+}
+
+// ---------------------------------------------------------------------------
+// Profile support
+// ---------------------------------------------------------------------------
+
+/**
+ * Base directory for agora config: AGORA_CONFIG_DIR env or ~/.config/agora
+ */
+export function getConfigDir(): string {
+  if (process.env.AGORA_CONFIG_DIR) {
+    return resolve(process.env.AGORA_CONFIG_DIR);
+  }
+  return resolve(homedir(), '.config', 'agora');
+}
+
+/**
+ * Resolve the config path for a given profile name.
+ *   - undefined / "default"  → ~/.config/agora/config.json  (existing behaviour)
+ *   - "stefan"               → ~/.config/agora/profiles/stefan/config.json
+ */
+export function getProfileConfigPath(profile?: string): string {
+  if (process.env.AGORA_CONFIG) {
+    return resolve(process.env.AGORA_CONFIG);
+  }
+  const base = getConfigDir();
+  if (!profile || profile === 'default') {
+    return join(base, 'config.json');
+  }
+  return join(base, 'profiles', profile, 'config.json');
+}
+
+/**
+ * List available profiles.
+ * Returns an array of profile names. "default" is included if config.json exists.
+ */
+export function listProfiles(): string[] {
+  const base = getConfigDir();
+  const profiles: string[] = [];
+
+  // Default profile
+  if (existsSync(join(base, 'config.json'))) {
+    profiles.push('default');
+  }
+
+  // Named profiles
+  const profilesDir = join(base, 'profiles');
+  if (existsSync(profilesDir)) {
+    for (const entry of readdirSync(profilesDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && existsSync(join(profilesDir, entry.name, 'config.json'))) {
+        profiles.push(entry.name);
+      }
+    }
+  }
+
+  return profiles;
+}
+
+// ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+export interface ExportedConfig {
+  /** Schema version for forward-compat */
+  version: 1;
+  identity?: AgoraIdentity;
+  peers: Record<string, AgoraPeerConfig>;
+  relay?: RelayConfig;
+}
+
+export interface ImportResult {
+  peersAdded: string[];
+  peersSkipped: string[];
+  identityImported: boolean;
+  relayImported: boolean;
+}
+
+/**
+ * Export the config (or just peers) as a portable JSON object.
+ */
+export function exportConfig(
+  config: AgoraConfig,
+  opts: { includeIdentity?: boolean } = {},
+): ExportedConfig {
+  const exported: ExportedConfig = {
+    version: 1,
+    peers: Object.fromEntries(
+      Object.entries(config.peers).map(([k, v]) => [k, { ...v }]),
+    ),
+  };
+  if (opts.includeIdentity) {
+    exported.identity = { ...config.identity };
+  }
+  if (config.relay) {
+    exported.relay = { ...config.relay };
+  }
+  return exported;
+}
+
+/**
+ * Import peers (and optionally identity/relay) into an existing config.
+ * Merges peers by public key — existing peers are NOT overwritten.
+ */
+export function importConfig(
+  target: AgoraConfig,
+  incoming: ExportedConfig,
+  opts: { overwriteIdentity?: boolean; overwriteRelay?: boolean } = {},
+): ImportResult {
+  const result: ImportResult = {
+    peersAdded: [],
+    peersSkipped: [],
+    identityImported: false,
+    relayImported: false,
+  };
+
+  // Merge peers
+  for (const [key, peer] of Object.entries(incoming.peers)) {
+    if (target.peers[key]) {
+      result.peersSkipped.push(key);
+    } else {
+      target.peers[key] = { ...peer };
+      result.peersAdded.push(key);
+    }
+  }
+
+  // Identity
+  if (opts.overwriteIdentity && incoming.identity) {
+    target.identity = { ...incoming.identity };
+    result.identityImported = true;
+  }
+
+  // Relay
+  if (opts.overwriteRelay && incoming.relay) {
+    target.relay = { ...incoming.relay };
+    result.relayImported = true;
+  }
+
+  return result;
+}
+
+/**
+ * Save an AgoraConfig to disk (creates parent dirs as needed).
+ */
+export function saveAgoraConfig(path: string, config: AgoraConfig): void {
+  const dir = dirname(path);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  const raw: Record<string, unknown> = {
+    identity: config.identity,
+    peers: config.peers,
+  };
+  if (config.relay) {
+    raw.relay = config.relay;
+  }
+  writeFileSync(path, JSON.stringify(raw, null, 2) + '\n', 'utf-8');
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { parseArgs } from 'node:util';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { loadPeerConfig, savePeerConfig, initPeerConfig } from './transport/peer-config';
@@ -9,6 +9,15 @@ import { sendToPeer, decodeInboundEnvelope, type PeerConfig } from './transport/
 import { sendViaRelay } from './transport/relay';
 import type { MessageType } from './message/envelope';
 import type { AnnouncePayload } from './registry/messages';
+import {
+  getProfileConfigPath,
+  listProfiles,
+  loadAgoraConfig,
+  exportConfig,
+  importConfig,
+  saveAgoraConfig,
+  type ExportedConfig,
+} from './config';
 import { PeerServer } from './peer/server';
 import { RelayServer } from './relay/server';
 import { RelayClient } from './relay/client';
@@ -22,6 +31,7 @@ import { computeTrustScore } from './reputation/scoring';
 
 interface CliOptions {
   config?: string;
+  profile?: string;
   pretty?: boolean;
 }
 
@@ -67,10 +77,7 @@ function getConfigPath(options: CliOptions): string {
   if (options.config) {
     return resolve(options.config);
   }
-  if (process.env.AGORA_CONFIG) {
-    return resolve(process.env.AGORA_CONFIG);
-  }
-  return resolve(homedir(), '.config', 'agora', 'config.json');
+  return getProfileConfigPath(options.profile);
 }
 
 /**
@@ -687,6 +694,175 @@ function handleStatus(options: CliOptions): void {
   }, options.pretty || false);
 }
 
+// ---------------------------------------------------------------------------
+// Profile & config transfer commands
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle the `agora config profiles` command.
+ */
+function handleConfigProfiles(options: CliOptions): void {
+  const profiles = listProfiles();
+  if (profiles.length === 0) {
+    output({ profiles: [], message: 'No profiles found. Run `agora init` first.' }, options.pretty || false);
+    return;
+  }
+  output({ profiles }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora config export` command.
+ */
+function handleConfigExport(options: CliOptions & { 'include-identity'?: boolean; output?: string }): void {
+  const configPath = getConfigPath(options);
+  if (!existsSync(configPath)) {
+    console.error('Error: Config file not found. Run `agora init` first.');
+    process.exit(1);
+  }
+
+  const config = loadAgoraConfig(configPath);
+  const exported = exportConfig(config, { includeIdentity: options['include-identity'] });
+
+  if (options.output) {
+    const outPath = resolve(options.output);
+    const dir = dirname(outPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(outPath, JSON.stringify(exported, null, 2) + '\n', 'utf-8');
+    output({ status: 'exported', path: outPath, peerCount: Object.keys(exported.peers).length, includesIdentity: !!exported.identity }, options.pretty || false);
+  } else {
+    // Write to stdout for piping
+    console.log(JSON.stringify(exported, null, 2));
+  }
+}
+
+/**
+ * Handle the `agora config import` command.
+ */
+function handleConfigImport(
+  args: string[],
+  options: CliOptions & { 'overwrite-identity'?: boolean; 'overwrite-relay'?: boolean; 'dry-run'?: boolean },
+): void {
+  if (args.length < 1) {
+    console.error('Error: Missing import file. Usage: agora config import <file> [--overwrite-identity] [--overwrite-relay] [--dry-run]');
+    process.exit(1);
+  }
+
+  const importPath = resolve(args[0]);
+  if (!existsSync(importPath)) {
+    console.error(`Error: Import file not found: ${importPath}`);
+    process.exit(1);
+  }
+
+  let incoming: ExportedConfig;
+  try {
+    incoming = JSON.parse(readFileSync(importPath, 'utf-8')) as ExportedConfig;
+  } catch {
+    console.error(`Error: Invalid JSON in import file: ${importPath}`);
+    process.exit(1);
+  }
+
+  if (incoming.version !== 1) {
+    console.error(`Error: Unsupported export version: ${(incoming as unknown as Record<string, unknown>).version}`);
+    process.exit(1);
+  }
+
+  const configPath = getConfigPath(options);
+
+  // If target config doesn't exist, initialize it first
+  if (!existsSync(configPath)) {
+    ensureConfigDir(configPath);
+    initPeerConfig(configPath);
+  }
+
+  const config = loadAgoraConfig(configPath);
+  const result = importConfig(config, incoming, {
+    overwriteIdentity: options['overwrite-identity'],
+    overwriteRelay: options['overwrite-relay'],
+  });
+
+  if (!options['dry-run']) {
+    saveAgoraConfig(configPath, config);
+  }
+
+  output({
+    status: options['dry-run'] ? 'dry-run' : 'imported',
+    configPath,
+    peersAdded: result.peersAdded.length,
+    peersSkipped: result.peersSkipped.length,
+    identityImported: result.identityImported,
+    relayImported: result.relayImported,
+  }, options.pretty || false);
+}
+
+/**
+ * Handle the `agora peers copy` command.
+ * Copy a peer from one profile to another.
+ */
+function handlePeersCopy(
+  args: string[],
+  options: CliOptions & { from?: string; to?: string },
+): void {
+  if (args.length < 1) {
+    console.error('Error: Missing peer name. Usage: agora peers copy <name> --from <profile> --to <profile>');
+    console.error('  Profile names: "default" or a named profile. Omit for the current --profile / default.');
+    process.exit(1);
+  }
+
+  const peerRef = args[0];
+  const fromProfile = options.from;
+  const toProfile = options.to;
+
+  // Resolve source config
+  const fromPath = fromProfile !== undefined
+    ? getProfileConfigPath(fromProfile)
+    : getConfigPath(options);
+
+  if (!existsSync(fromPath)) {
+    console.error(`Error: Source config not found: ${fromPath}`);
+    process.exit(1);
+  }
+
+  // Resolve target config
+  const toPath = toProfile !== undefined
+    ? getProfileConfigPath(toProfile)
+    : getConfigPath(options);
+
+  if (fromPath === toPath) {
+    console.error('Error: Source and target profiles are the same.');
+    process.exit(1);
+  }
+
+  // Load source and resolve peer
+  const sourceConfig = loadPeerConfig(fromPath);
+  const resolved = resolvePeerEntry(sourceConfig.peers, peerRef);
+  if (!resolved) {
+    console.error(`Error: Peer '${peerRef}' not found in source config (${fromPath}).`);
+    process.exit(1);
+  }
+
+  // Ensure target exists
+  if (!existsSync(toPath)) {
+    ensureConfigDir(toPath);
+    initPeerConfig(toPath);
+  }
+
+  const targetConfig = loadPeerConfig(toPath);
+
+  // Copy peer (overwrite if already present)
+  targetConfig.peers[resolved.key] = { ...resolved.peer };
+  savePeerConfig(toPath, targetConfig);
+
+  output({
+    status: 'copied',
+    peer: resolved.peer.name || resolved.key,
+    publicKey: resolved.peer.publicKey,
+    from: fromPath,
+    to: toPath,
+  }, options.pretty || false);
+}
+
 /**
  * Handle the `agora announce` command.
  * Disabled to enforce strict peer-to-peer semantics.
@@ -1256,8 +1432,10 @@ async function main(): Promise<void> {
 
   if (args.length === 0) {
     console.error('Usage: agora <command> [options]');
-    console.error('Commands: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay, reputation');
-    console.error('  peers subcommands: add, list, remove, discover');
+    console.error('Commands: init, whoami, status, peers, config, send, decode, serve, diagnose, relay, reputation');
+    console.error('Global: --profile <name> (or --as <name>) to select a named profile');
+    console.error('  peers subcommands: add, list, remove, discover, copy');
+    console.error('  config subcommands: profiles, export, import');
     console.error('  reputation subcommands: verify, commit, reveal, query');
     process.exit(1);
   }
@@ -1267,7 +1445,17 @@ async function main(): Promise<void> {
     args,
     options: {
       config: { type: 'string' },
+      profile: { type: 'string' },
+      as: { type: 'string' },
       pretty: { type: 'boolean' },
+      // Config transfer options
+      'include-identity': { type: 'boolean' },
+      'overwrite-identity': { type: 'boolean' },
+      'overwrite-relay': { type: 'boolean' },
+      'dry-run': { type: 'boolean' },
+      output: { type: 'string' },
+      from: { type: 'string' },
+      to: { type: 'string' },
       url: { type: 'string' },
       token: { type: 'string' },
       pubkey: { type: 'string' },
@@ -1304,6 +1492,13 @@ async function main(): Promise<void> {
   const subcommand = parsed.positionals[1];
   const remainingArgs = parsed.positionals.slice(2);
 
+  // --as is an alias for --profile
+  const profileValue = typeof parsed.values.profile === 'string'
+    ? parsed.values.profile
+    : typeof parsed.values.as === 'string'
+      ? parsed.values.as
+      : undefined;
+
   const options: CliOptions & { 
     type?: string; 
     payload?: string; 
@@ -1319,6 +1514,14 @@ async function main(): Promise<void> {
     limit?: string;
     'active-within'?: string;
     save?: boolean;
+    // Config transfer options
+    'include-identity'?: boolean;
+    'overwrite-identity'?: boolean;
+    'overwrite-relay'?: boolean;
+    'dry-run'?: boolean;
+    output?: string;
+    from?: string;
+    to?: string;
     // Reputation options
     target?: string;
     domain?: string;
@@ -1334,6 +1537,7 @@ async function main(): Promise<void> {
     'relay-only'?: boolean;
   } = {
     config: typeof parsed.values.config === 'string' ? parsed.values.config : undefined,
+    profile: profileValue,
     pretty: typeof parsed.values.pretty === 'boolean' ? parsed.values.pretty : undefined,
     type: typeof parsed.values.type === 'string' ? parsed.values.type : undefined,
     payload: typeof parsed.values.payload === 'string' ? parsed.values.payload : undefined,
@@ -1362,6 +1566,13 @@ async function main(): Promise<void> {
     agent: typeof parsed.values.agent === 'string' ? parsed.values.agent : undefined,
     direct: typeof parsed.values.direct === 'boolean' ? parsed.values.direct : undefined,
     'relay-only': typeof parsed.values['relay-only'] === 'boolean' ? parsed.values['relay-only'] : undefined,
+    'include-identity': typeof parsed.values['include-identity'] === 'boolean' ? parsed.values['include-identity'] : undefined,
+    'overwrite-identity': typeof parsed.values['overwrite-identity'] === 'boolean' ? parsed.values['overwrite-identity'] : undefined,
+    'overwrite-relay': typeof parsed.values['overwrite-relay'] === 'boolean' ? parsed.values['overwrite-relay'] : undefined,
+    'dry-run': typeof parsed.values['dry-run'] === 'boolean' ? parsed.values['dry-run'] : undefined,
+    output: typeof parsed.values.output === 'string' ? parsed.values.output : undefined,
+    from: typeof parsed.values.from === 'string' ? parsed.values.from : undefined,
+    to: typeof parsed.values.to === 'string' ? parsed.values.to : undefined,
   };
 
   try {
@@ -1397,8 +1608,11 @@ async function main(): Promise<void> {
           case 'discover':
             await handlePeersDiscover(options);
             break;
+          case 'copy':
+            handlePeersCopy(remainingArgs, options);
+            break;
           default:
-            console.error('Error: Unknown peers subcommand. Use: add, list, remove, discover');
+            console.error('Error: Unknown peers subcommand. Use: add, list, remove, discover, copy');
             process.exit(1);
         }
         break;
@@ -1413,6 +1627,22 @@ async function main(): Promise<void> {
         break;
       case 'relay':
         await handleRelay(options);
+        break;
+      case 'config':
+        switch (subcommand) {
+          case 'profiles':
+            handleConfigProfiles(options);
+            break;
+          case 'export':
+            handleConfigExport(options);
+            break;
+          case 'import':
+            handleConfigImport(remainingArgs, options);
+            break;
+          default:
+            console.error('Error: Unknown config subcommand. Use: profiles, export, import');
+            process.exit(1);
+        }
         break;
       case 'reputation':
         switch (subcommand) {
@@ -1434,7 +1664,7 @@ async function main(): Promise<void> {
         }
         break;
       default:
-        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, announce, send, decode, serve, diagnose, relay, reputation`);
+        console.error(`Error: Unknown command '${command}'. Use: init, whoami, status, peers, config, send, decode, serve, diagnose, relay, reputation`);
         process.exit(1);
     }
   } catch (e) {

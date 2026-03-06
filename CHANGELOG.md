@@ -2,6 +2,34 @@
 
 All notable changes to `@rookdaemon/agora` are documented here.
 
+## [0.6.0] - 2026-03-06
+
+### Added
+
+#### Named Profiles
+
+Run multiple identities on the same machine. Profiles live under
+`~/.config/agora/profiles/<name>/config.json`, while the default config
+stays at `~/.config/agora/config.json`.
+
+- `--profile <name>` / `--as <name>` global CLI flag — all commands respect it
+- `agora config profiles` — list available profiles
+- `getProfileConfigPath(profile?)`, `listProfiles()`, `getConfigDir()` — new config API
+
+#### Config Export / Import
+
+Transfer peer lists (and optionally identity/relay) between machines or profiles.
+
+- `agora config export [--include-identity] [--output <file>]`
+- `agora config import <file> [--overwrite-identity] [--overwrite-relay] [--dry-run]`
+- `exportConfig()`, `importConfig()`, `saveAgoraConfig()` — new library API
+- Exported format is a versioned JSON blob (`{ version: 1, peers, relay?, identity? }`)
+- Import merges peers by public key — existing peers are not overwritten
+
+#### Peer Copy Between Profiles
+
+- `agora peers copy <name|pubkey> --from <profile> --to <profile>`
+
 ## [0.4.0] - 2026-02-24
 
 ### Added
