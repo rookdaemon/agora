@@ -118,7 +118,8 @@ export class RelayClient extends EventEmitter {
 
   /**
    * Create a signed envelope and send it to each recipient.
-   * One envelope is created per recipient (each with that recipient in the `to` field).
+   * Each envelope lists ALL recipients in the `to` field so receivers
+   * know the full participant list (needed for multi-party replies).
    * Returns the list of failures (empty means all succeeded).
    */
   async sendToRecipients(
@@ -142,7 +143,7 @@ export class RelayClient extends EventEmitter {
         payload,
         Date.now(),
         inReplyTo,
-        recipient,
+        unique,
       );
       const result = await this.send(recipient, envelope);
       if (!result.ok) {
