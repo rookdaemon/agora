@@ -26,7 +26,8 @@ export async function sendViaRelay(
   peerPublicKey: string,
   type: MessageType,
   payload: unknown,
-  inReplyTo?: string
+  inReplyTo?: string,
+  allRecipients?: string[],
 ): Promise<{ ok: boolean; error?: string }> {
   // If a persistent relay client is available, use it
   if (config.relayClient && config.relayClient.connected()) {
@@ -37,7 +38,7 @@ export async function sendViaRelay(
       payload,
       Date.now(),
       inReplyTo,
-      [peerPublicKey]
+      allRecipients ?? [peerPublicKey]
     );
     return config.relayClient.send(peerPublicKey, envelope);
   }
@@ -90,7 +91,7 @@ export async function sendViaRelay(
             payload,
             Date.now(),
             inReplyTo,
-            [peerPublicKey]
+            allRecipients ?? [peerPublicKey]
           );
 
           // Send message via relay

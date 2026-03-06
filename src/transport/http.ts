@@ -28,7 +28,8 @@ export async function sendToPeer(
   peerPublicKey: string,
   type: MessageType,
   payload: unknown,
-  inReplyTo?: string
+  inReplyTo?: string,
+  allRecipients?: string[],
 ): Promise<{ ok: boolean; status: number; error?: string }> {
   // Look up peer config
   const peer = config.peers.get(peerPublicKey);
@@ -49,7 +50,7 @@ export async function sendToPeer(
     payload,
     Date.now(),
     inReplyTo,
-    [peerPublicKey]
+    allRecipients ?? [peerPublicKey]
   );
 
   // Encode envelope as base64url

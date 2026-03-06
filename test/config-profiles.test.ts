@@ -212,6 +212,38 @@ describe('Export / Import', () => {
   });
 });
 
+describe('importConfig into fresh config (simulates CLI new-profile behavior)', () => {
+  it('should apply identity when overwriteIdentity is true (new profile auto-apply)', () => {
+    // This simulates the CLI behavior: when importing into a profile that didn't
+    // exist before, the CLI passes overwriteIdentity: true automatically.
+    const target: AgoraConfig = {
+      identity: { publicKey: 'auto-generated', privateKey: 'auto-priv' },
+      peers: {},
+    };
+
+    const incoming: ExportedConfig = {
+      version: 1,
+      identity: { publicKey: 'real-pub', privateKey: 'real-priv', name: 'stefan' },
+      peers: {
+        peer1: { publicKey: 'peer1', name: 'alice' },
+      },
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const result = importConfig(target, incoming, {
+      overwriteIdentity: true,
+      overwriteRelay: true,
+    });
+
+    assert.strictEqual(target.identity.publicKey, 'real-pub');
+    assert.strictEqual(target.identity.privateKey, 'real-priv');
+    assert.strictEqual(target.identity.name, 'stefan');
+    assert.strictEqual(result.identityImported, true);
+    assert.strictEqual(result.relayImported, true);
+    assert.deepStrictEqual(result.peersAdded, ['peer1']);
+  });
+});
+
 describe('saveAgoraConfig / loadAgoraConfig round-trip', () => {
   const testBase = join(tmpdir(), 'agora-save-test');
   const testPath = join(testBase, 'profiles', 'test', 'config.json');

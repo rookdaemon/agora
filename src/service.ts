@@ -26,6 +26,8 @@ export interface SendMessageOptions {
   direct?: boolean;
   /** Skip direct HTTP, always use relay even if peer has a URL. */
   relayOnly?: boolean;
+  /** All recipients of this message (for multi-recipient sends). Used in the envelope `to` field. */
+  allRecipients?: string[];
 }
 
 export interface SendMessageResult {
@@ -153,7 +155,8 @@ export class AgoraService {
         peer.publicKey,
         options.type,
         options.payload,
-        options.inReplyTo
+        options.inReplyTo,
+        options.allRecipients
       );
 
       if (httpResult.ok) {
@@ -190,7 +193,8 @@ export class AgoraService {
         peer.publicKey,
         options.type,
         options.payload,
-        options.inReplyTo
+        options.inReplyTo,
+        options.allRecipients
       );
 
       return {

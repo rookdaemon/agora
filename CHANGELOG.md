@@ -2,6 +2,11 @@
 
 All notable changes to `@rookdaemon/agora` are documented here.
 
+## [0.6.1] - 2026-03-06
+
+### Fixed
+- Multi-recipient envelopes now include ALL recipients in the `to` field, not just the delivery target. This ensures agents see every participant in multi-party conversations and can address replies correctly.
+
 ## [0.6.0] - 2026-03-06
 
 ### Added

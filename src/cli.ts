@@ -71,6 +71,37 @@ function compactPayloadTextReferences(payload: unknown, peers: Record<string, Co
 }
 
 /**
+ * Suggest the closest known flag for a typo (Levenshtein distance ≤ 3).
+ */
+function didYouMean(input: string, known: Set<string>): string | undefined {
+  let best: string | undefined;
+  let bestDist = 4; // threshold
+  for (const candidate of known) {
+    const d = levenshtein(input, candidate);
+    if (d < bestDist) {
+      bestDist = d;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+/**
  * Get the config file path from CLI options, environment, or default.
  */
 function getConfigPath(options: CliOptions): string {
@@ -764,22 +795,24 @@ function handleConfigImport(
   }
 
   if (incoming.version !== 1) {
-    console.error(`Error: Unsupported export version: ${(incoming as unknown as Record<string, unknown>).version}`);
+    console.error(`Error: Unsupported export version: ${(incoming as unknown as Record<string, unknown>).version}. Expected version 1 (from 'agora config export').`);
     process.exit(1);
   }
 
   const configPath = getConfigPath(options);
 
-  // If target config doesn't exist, initialize it first
-  if (!existsSync(configPath)) {
+  // When target doesn't exist, auto-apply identity/relay from the export file
+  // (--overwrite-identity is only needed when the target already has an identity you want to replace)
+  const isNewProfile = !existsSync(configPath);
+  if (isNewProfile) {
     ensureConfigDir(configPath);
     initPeerConfig(configPath);
   }
 
   const config = loadAgoraConfig(configPath);
   const result = importConfig(config, incoming, {
-    overwriteIdentity: options['overwrite-identity'],
-    overwriteRelay: options['overwrite-relay'],
+    overwriteIdentity: options['overwrite-identity'] || isNewProfile,
+    overwriteRelay: options['overwrite-relay'] || isNewProfile,
   });
 
   if (!options['dry-run']) {
@@ -1487,6 +1520,26 @@ async function main(): Promise<void> {
     strict: false,
     allowPositionals: true,
   });
+
+  // Warn about unrecognised flags (catches typos like --owerwrite-identity)
+  const knownFlags = new Set([
+    'config', 'profile', 'as', 'pretty',
+    'include-identity', 'overwrite-identity', 'overwrite-relay', 'dry-run',
+    'output', 'from', 'to',
+    'url', 'token', 'pubkey', 'type', 'payload', 'name', 'version',
+    'port', 'checks', 'relay', 'relay-pubkey', 'limit', 'active-within', 'save',
+    'target', 'domain', 'verdict', 'confidence', 'evidence', 'prediction',
+    'expiry', 'commit-id', 'outcome', 'agent', 'direct', 'relay-only',
+  ]);
+  for (const key of Object.keys(parsed.values)) {
+    if (!knownFlags.has(key)) {
+      const suggestion = didYouMean(key, knownFlags);
+      const msg = suggestion
+        ? `Warning: Unknown flag --${key}. Did you mean --${suggestion}?`
+        : `Warning: Unknown flag --${key} (ignored).`;
+      console.error(msg);
+    }
+  }
 
   const command = parsed.positionals[0];
   const subcommand = parsed.positionals[1];
