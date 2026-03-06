@@ -26,8 +26,6 @@ export interface RelayEnvelopeDedupOptions {
 interface ConnectedAgent {
   /** Agent's public key */
   publicKey: string;
-  /** Optional agent name */
-  name?: string;
   /** WebSocket connection */
   socket: WebSocket;
   /** Last seen timestamp (ms) */
@@ -281,7 +279,6 @@ export class RelayServer extends EventEmitter {
           }
 
           const publicKey = msg.publicKey;
-          const name = msg.name;
           agentPublicKey = publicKey;
           sessionId = crypto.randomUUID();
 
@@ -294,7 +291,6 @@ export class RelayServer extends EventEmitter {
 
           const agent: ConnectedAgent = {
             publicKey,
-            name,
             socket,
             lastSeen: Date.now(),
           };
@@ -308,15 +304,14 @@ export class RelayServer extends EventEmitter {
           this.emit('agent-registered', publicKey);
 
           // Build peers list: one entry per connected publicKey + storage peers
-          const peers: Array<{ publicKey: string; name?: string }> = [];
+          const peers: Array<{ publicKey: string }> = [];
           for (const [key, sessionMap] of this.sessions) {
             if (key === publicKey) continue;
-            const firstAgent = sessionMap.values().next().value;
-            peers.push({ publicKey: key, name: firstAgent?.name });
+            peers.push({ publicKey: key });
           }
           for (const storagePeer of this.storagePeers) {
             if (storagePeer !== publicKey && !this.sessions.has(storagePeer)) {
-              peers.push({ publicKey: storagePeer, name: undefined });
+              peers.push({ publicKey: storagePeer });
             }
           }
 
@@ -329,7 +324,7 @@ export class RelayServer extends EventEmitter {
 
           // Notify other agents only when this is the first session for this peer
           if (isFirstSession) {
-            this.broadcastPeerEvent('peer_online', publicKey, name);
+            this.broadcastPeerEvent('peer_online', publicKey);
           }
 
           // Deliver any stored messages for this peer
@@ -467,8 +462,6 @@ export class RelayServer extends EventEmitter {
       if (agentPublicKey && sessionId) {
         const sessionMap = this.sessions.get(agentPublicKey);
         if (sessionMap) {
-          const agent = sessionMap.get(sessionId);
-          const agentName = agent?.name;
           sessionMap.delete(sessionId);
           if (sessionMap.size === 0) {
             this.sessions.delete(agentPublicKey);
@@ -476,7 +469,7 @@ export class RelayServer extends EventEmitter {
             this.emit('disconnection', agentPublicKey);
             // Storage-enabled peers are always considered connected; skip peer_offline for them
             if (!this.storagePeers.includes(agentPublicKey)) {
-              this.broadcastPeerEvent('peer_offline', agentPublicKey, agentName);
+              this.broadcastPeerEvent('peer_offline', agentPublicKey);
             }
           }
         }
@@ -507,11 +500,10 @@ export class RelayServer extends EventEmitter {
   /**
    * Broadcast a peer event to all connected agents (all sessions except the one for publicKey)
    */
-  private broadcastPeerEvent(eventType: 'peer_online' | 'peer_offline', publicKey: string, name?: string): void {
+  private broadcastPeerEvent(eventType: 'peer_online' | 'peer_offline', publicKey: string): void {
     const message = {
       type: eventType,
       publicKey,
-      name,
     };
     const messageStr = JSON.stringify(message);
 
@@ -564,8 +556,7 @@ export class RelayServer extends EventEmitter {
     const response: PeerListResponsePayload = {
       peers: peers.map(p => ({
         publicKey: p.publicKey,
-        metadata: p.name || p.metadata ? {
-          name: p.name,
+        metadata: p.metadata ? {
           version: p.metadata?.version,
           capabilities: p.metadata?.capabilities,
           } : undefined,
@@ -590,7 +581,6 @@ export class RelayServer extends EventEmitter {
     const relayMessage = {
       type: 'message',
       from: this.identity.publicKey,
-      name: 'relay',
       envelope: responseEnvelope,
     };
 

@@ -6,7 +6,6 @@ import type { Envelope } from '../message/envelope';
 export interface RelayClientMessage {
   type: 'register' | 'message' | 'ping';
   publicKey?: string;
-  name?: string;
   to?: string;
   envelope?: Envelope;
 }
@@ -18,10 +17,9 @@ export interface RelayServerMessage {
   type: 'registered' | 'message' | 'error' | 'pong' | 'peer_online' | 'peer_offline';
   publicKey?: string;
   sessionId?: string;
-  name?: string;
   from?: string;
   envelope?: Envelope;
-  peers?: Array<{ publicKey: string; name?: string }>;
+  peers?: Array<{ publicKey: string }>;
   code?: string;
   message?: string;
 }
@@ -31,5 +29,4 @@ export interface RelayServerMessage {
  */
 export interface RelayPeer {
   publicKey: string;
-  name?: string;
 }

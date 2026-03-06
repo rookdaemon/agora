@@ -193,7 +193,6 @@ export class RelayClient extends EventEmitter {
           const registerMsg: RelayClientMessage = {
             type: 'register',
             publicKey: this.config.publicKey,
-            name: this.config.name,
           };
           this.ws!.send(JSON.stringify(registerMsg));
         });
@@ -281,7 +280,6 @@ export class RelayClient extends EventEmitter {
         if (msg.publicKey) {
           const peer: RelayPeer = {
             publicKey: msg.publicKey,
-            name: msg.name,
           };
           this.onlinePeers.set(msg.publicKey, peer);
           this.emit('peer_online', peer);

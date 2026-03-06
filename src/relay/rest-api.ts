@@ -35,7 +35,6 @@ const apiRateLimit = (rpm: number): ReturnType<typeof rateLimit> => rateLimit({
 export interface RestSession {
   publicKey: string;
   privateKey: string;
-  name?: string;
   metadata?: { version?: string; capabilities?: string[] };
   registeredAt: number;
   expiresAt: number;
@@ -63,7 +62,6 @@ export interface RelayInterface {
     string,
     {
       publicKey: string;
-      name?: string;
       lastSeen: number;
       metadata?: { version?: string; capabilities?: string[] };
       socket: unknown;
@@ -140,10 +138,9 @@ export function createRestRouter(
   });
 
   router.post('/v1/register', async (req: Request, res: Response) => {
-    const { publicKey, privateKey, name, metadata } = req.body as {
+    const { publicKey, privateKey, metadata } = req.body as {
       publicKey?: string;
       privateKey?: string;
-      name?: string;
       metadata?: { version?: string; capabilities?: string[] };
     };
 
@@ -172,13 +169,12 @@ export function createRestRouter(
       return;
     }
 
-    const { token, expiresAt } = createToken({ publicKey, name });
+    const { token, expiresAt } = createToken({ publicKey });
     pruneExpiredSessions(sessions, buffer);
 
     const session: RestSession = {
       publicKey,
       privateKey,
-      name,
       metadata,
       registeredAt: Date.now(),
       expiresAt,
@@ -187,12 +183,11 @@ export function createRestRouter(
     sessions.set(publicKey, session);
 
     const wsAgents = relay.getAgents();
-    const peers: Array<{ publicKey: string; name?: string; lastSeen: number }> = [];
+    const peers: Array<{ publicKey: string; lastSeen: number }> = [];
     for (const agent of wsAgents.values()) {
       if (agent.publicKey !== publicKey) {
         peers.push({
           publicKey: agent.publicKey,
-          name: agent.name,
           lastSeen: agent.lastSeen,
         });
       }
@@ -201,7 +196,6 @@ export function createRestRouter(
       if (s.publicKey !== publicKey && !wsAgents.has(s.publicKey)) {
         peers.push({
           publicKey: s.publicKey,
-          name: s.name,
           lastSeen: s.registeredAt,
         });
       }
@@ -264,7 +258,6 @@ export function createRestRouter(
           const relayMsg = JSON.stringify({
             type: 'message',
             from: senderPublicKey,
-            name: session.name,
             envelope,
           });
           ws.send(relayMsg);
@@ -307,7 +300,6 @@ export function createRestRouter(
       const wsAgents = relay.getAgents();
       const peerList: Array<{
         publicKey: string;
-        name?: string;
         lastSeen: number;
         metadata?: { version?: string; capabilities?: string[] };
       }> = [];
@@ -316,7 +308,6 @@ export function createRestRouter(
         if (agent.publicKey !== callerPublicKey) {
           peerList.push({
             publicKey: agent.publicKey,
-            name: agent.name,
             lastSeen: agent.lastSeen,
             metadata: agent.metadata,
           });
@@ -327,7 +318,6 @@ export function createRestRouter(
         if (s.publicKey !== callerPublicKey && !wsAgents.has(s.publicKey)) {
           peerList.push({
             publicKey: s.publicKey,
-            name: s.name,
             lastSeen: s.registeredAt,
             metadata: s.metadata,
           });
