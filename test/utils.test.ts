@@ -110,7 +110,7 @@ describe('formatDisplayName', () => {
 
 describe('extractTextFromPayload', () => {
   it('extracts text from { text } payload', () => {
-    assert.strictEqual(extractTextFromPayload({ text: 'hello', dm: true }), 'hello');
+    assert.strictEqual(extractTextFromPayload({ text: 'hello' }), 'hello');
   });
 
   it('returns plain string payload as-is', () => {
