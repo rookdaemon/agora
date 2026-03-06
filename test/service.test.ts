@@ -479,3 +479,99 @@ describe('AgoraService.replyToEnvelope', () => {
     assert.strictEqual(envelope.inReplyTo, 'original-envelope-id-999');
   });
 });
+
+describe('AgoraService.sendToAll', () => {
+  const identity = generateKeyPair();
+  const peer1 = generateKeyPair();
+  const peer2 = generateKeyPair();
+
+  it('should send to all recipients with full to field', async () => {
+    const relayClient = createMockRelayClient();
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([
+        ['alice', { publicKey: peer1.publicKey }],
+        ['bob', { publicKey: peer2.publicKey }],
+      ]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.sendToAll({
+      recipients: ['alice', 'bob'],
+      type: 'publish',
+      payload: { text: 'hello both' },
+    });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.errors.length, 0);
+
+    // Both envelopes should have been sent via relay
+    const sendCalls = (relayClient.send as ReturnType<typeof mock.fn>).mock.calls;
+    assert.strictEqual(sendCalls.length, 2);
+
+    // Each envelope should have BOTH recipients in the `to` field
+    for (const call of sendCalls) {
+      const envelope = call.arguments[1];
+      assert.deepStrictEqual(envelope.to.sort(), [peer1.publicKey, peer2.publicKey].sort());
+    }
+  });
+
+  it('should return partial success when one recipient fails', async () => {
+    let callCount = 0;
+    const relayClient = createMockRelayClient({
+      connected: true,
+      sendResult: { ok: true },
+    });
+    // Override send to fail on second call
+    relayClient.send = async () => {
+      callCount++;
+      if (callCount === 2) return { ok: false, error: 'peer offline' };
+      return { ok: true };
+    };
+    const relayClientFactory: RelayClientFactory = mock.fn(() => relayClient);
+
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map([
+        ['alice', { publicKey: peer1.publicKey }],
+        ['bob', { publicKey: peer2.publicKey }],
+      ]),
+      relay: { url: 'wss://relay.example.com', autoConnect: true },
+    };
+
+    const service = new AgoraService(config, () => {}, undefined, relayClientFactory);
+    await service.connectRelay('wss://relay.example.com');
+
+    const result = await service.sendToAll({
+      recipients: ['alice', 'bob'],
+      type: 'publish',
+      payload: { text: 'partial' },
+    });
+
+    assert.strictEqual(result.ok, true); // at least one succeeded
+    assert.strictEqual(result.errors.length, 1);
+    assert.strictEqual(result.errors[0].recipient, 'bob');
+  });
+
+  it('should return empty result for empty recipients', async () => {
+    const config: AgoraServiceConfig = {
+      identity,
+      peers: new Map(),
+    };
+
+    const service = new AgoraService(config, () => {});
+    const result = await service.sendToAll({
+      recipients: [],
+      type: 'publish',
+      payload: {},
+    });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.errors.length, 0);
+  });
+});

@@ -36,6 +36,22 @@ export interface SendMessageResult {
   error?: string;
 }
 
+export interface SendToAllOptions {
+  /** Recipient identifiers — peer names, public keys, or short refs. */
+  recipients: string[];
+  type: MessageType;
+  payload: unknown;
+  inReplyTo?: string;
+  direct?: boolean;
+  relayOnly?: boolean;
+}
+
+export interface SendToAllResult {
+  /** True when at least one recipient succeeded (or recipients is empty). */
+  ok: boolean;
+  errors: Array<{ recipient: string; error: string }>;
+}
+
 export interface ReplyToEnvelopeOptions {
   /** The public key of the target (from envelope.sender) */
   targetPubkey: string;
@@ -212,6 +228,43 @@ export class AgoraService {
         ? `HTTP send failed and relay not available for peer: ${options.peerName}`
         : `No webhook URL and relay not available for peer: ${options.peerName}`,
     };
+  }
+
+  /**
+   * Send a message to multiple recipients.
+   * Each envelope carries the full recipient list in its `to` field so every
+   * receiver knows who else received the message (enables multi-party replies).
+   * Delivery is attempted per-recipient via HTTP-first + relay fallback.
+   */
+  async sendToAll(options: SendToAllOptions): Promise<SendToAllResult> {
+    const unique = Array.from(new Set(options.recipients.filter(Boolean)));
+    if (unique.length === 0) {
+      return { ok: true, errors: [] };
+    }
+
+    // Resolve all recipient public keys for the envelope `to` field
+    const allPubkeys = unique.map((id) => {
+      const peer = this.resolvePeer(id);
+      return peer?.publicKey ?? id;
+    });
+
+    const errors: Array<{ recipient: string; error: string }> = [];
+    for (const recipient of unique) {
+      const result = await this.sendMessage({
+        peerName: recipient,
+        type: options.type,
+        payload: options.payload,
+        inReplyTo: options.inReplyTo,
+        direct: options.direct,
+        relayOnly: options.relayOnly,
+        allRecipients: allPubkeys,
+      });
+      if (!result.ok) {
+        errors.push({ recipient, error: result.error ?? 'unknown error' });
+      }
+    }
+
+    return { ok: errors.length < unique.length, errors };
   }
 
   /**
