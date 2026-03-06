@@ -133,7 +133,6 @@ export function createRestRouter(
     const msg: BufferedMessage = {
       id: env.id,
       from,
-      fromName: senderAgent?.name,
       type: env.type,
       payload: env.payload,
       timestamp: env.timestamp,
@@ -289,7 +288,6 @@ export function createRestRouter(
         const msg: BufferedMessage = {
           id: envelope.id,
           from: senderPublicKey,
-          fromName: session.name ?? senderAgent?.name,
           type: envelope.type,
           payload: envelope.payload,
           timestamp: envelope.timestamp,

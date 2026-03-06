@@ -304,7 +304,6 @@ describe('GET /v1/messages', () => {
     buffer.add(ALICE.publicKey, {
       id: 'msg-1',
       from: BOB.publicKey,
-      fromName: 'bob',
       type: 'publish',
       payload: { text: 'hello' },
       timestamp: 1000,

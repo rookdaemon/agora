@@ -339,7 +339,6 @@ export class RelayServer extends EventEmitter {
               socket.send(JSON.stringify({
                 type: 'message',
                 from: stored.from,
-                name: stored.name,
                 envelope: stored.envelope,
               }));
             }
@@ -423,7 +422,6 @@ export class RelayServer extends EventEmitter {
               const senderAgent = senderSessionMap?.values().next().value;
               this.store.save(msg.to, {
                 from: agentPublicKey,
-                name: senderAgent?.name,
                 envelope,
               });
               this.emit('message-relayed', agentPublicKey, msg.to, envelope);

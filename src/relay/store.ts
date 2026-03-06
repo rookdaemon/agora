@@ -9,7 +9,6 @@ import * as path from 'node:path';
 
 export interface StoredMessage {
   from: string;
-  name?: string;
   envelope: object;
 }
 

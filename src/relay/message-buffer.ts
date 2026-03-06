@@ -8,7 +8,6 @@
 export interface BufferedMessage {
   id: string;
   from: string;
-  fromName?: string;
   type: string;
   payload: unknown;
   timestamp: number;
