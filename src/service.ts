@@ -69,11 +69,8 @@ export interface DecodeInboundResult {
   reason?: string;
 }
 
-/** Handler for relay messages. (envelope, fromPublicKey, fromName?) */
-export type RelayMessageHandlerWithName = (envelope: Envelope, from: string, fromName?: string) => void;
-
-/** @deprecated Use RelayMessageHandlerWithName. Kept for backward compatibility. */
-export type RelayMessageHandler = (envelope: Envelope) => void;
+/** Handler for relay messages. (envelope, fromPublicKey) */
+export type RelayMessageHandler = (envelope: Envelope, from: string) => void;
 
 export interface Logger {
   debug(message: string): void;
@@ -84,7 +81,7 @@ export interface RelayClientLike {
   disconnect(): void;
   connected(): boolean;
   send(to: string, envelope: Envelope): Promise<{ ok: boolean; error?: string }>;
-  on(event: 'message', handler: (envelope: Envelope, from: string, fromName?: string) => void): void;
+  on(event: 'message', handler: (envelope: Envelope, from: string) => void): void;
   on(event: 'error', handler: (error: Error) => void): void;
 }
 
@@ -105,7 +102,7 @@ export interface RelayClientFactory {
 export class AgoraService {
   private config: AgoraServiceConfig;
   private relayClient: RelayClientLike | null = null;
-  private readonly onRelayMessage: RelayMessageHandlerWithName;
+  private readonly onRelayMessage: RelayMessageHandler;
   private logger: Logger | null;
   private relayClientFactory: RelayClientFactory | null;
 
@@ -117,7 +114,7 @@ export class AgoraService {
    */
   constructor(
     config: AgoraServiceConfig,
-    onRelayMessage: RelayMessageHandlerWithName,
+    onRelayMessage: RelayMessageHandler,
     logger?: Logger,
     relayClientFactory?: RelayClientFactory
   ) {
@@ -360,8 +357,8 @@ export class AgoraService {
       this.logger?.debug(`Agora relay error: ${error.message}`);
     });
 
-    this.relayClient.on('message', (envelope: Envelope, from: string, fromName?: string) => {
-      this.onRelayMessage(envelope, from, fromName);
+    this.relayClient.on('message', (envelope: Envelope, from: string) => {
+      this.onRelayMessage(envelope, from);
     });
 
     try {

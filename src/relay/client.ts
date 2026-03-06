@@ -30,7 +30,7 @@ export interface RelayClientEvents {
   /** Emitted when disconnected from relay */
   'disconnected': () => void;
   /** Emitted when a verified message is received */
-  'message': (envelope: Envelope, from: string, fromName?: string) => void;
+  'message': (envelope: Envelope, from: string) => void;
   /** Emitted when a peer comes online */
   'peer_online': (peer: RelayPeer) => void;
   /** Emitted when a peer goes offline */
@@ -271,8 +271,9 @@ export class RelayClient extends EventEmitter {
             return;
           }
 
-          // Emit verified message
-          this.emit('message', msg.envelope, msg.from, msg.name);
+          // Emit verified message — relay name hint is intentionally discarded;
+          // identity display must be derived from verified keys only.
+          this.emit('message', msg.envelope, msg.from);
         }
         break;
 

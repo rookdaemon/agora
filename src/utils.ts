@@ -179,11 +179,10 @@ export function sanitizeText(text: string): string {
 /**
  * Resolve a display name for a peer.
  * Only returns locally configured names from the peer directory.
- * Sender-claimed names are never used — identity must be derived from verified keys.
+ * Identity must be derived from verified keys — sender-claimed names are never accepted.
  */
 export function resolveDisplayName(
   publicKey: string,
-  _peerName?: string | undefined,
   directory?: PeerReferenceDirectory,
 ): string | undefined {
   const entry = findById(publicKey, directory);

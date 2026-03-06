@@ -84,15 +84,11 @@ describe('display/sanitization helpers', () => {
 
   it('resolveDisplayName prefers configured peer name by public key', () => {
     const peers = directory();
-    assert.strictEqual(resolveDisplayName(ALICE, 'relay-alice', peers), 'alice');
+    assert.strictEqual(resolveDisplayName(ALICE, peers), 'alice');
   });
 
-  it('resolveDisplayName ignores relay name hints for unknown peers', () => {
-    assert.strictEqual(resolveDisplayName('unknown', 'relay-name', directory()), undefined);
-  });
-
-  it('resolveDisplayName ignores short-id relay names', () => {
-    assert.strictEqual(resolveDisplayName('unknown', '...1234abcd', directory()), undefined);
+  it('resolveDisplayName returns undefined for unknown peers', () => {
+    assert.strictEqual(resolveDisplayName('unknown', directory()), undefined);
   });
 });
 

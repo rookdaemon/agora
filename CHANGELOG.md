@@ -2,6 +2,22 @@
 
 All notable changes to `@rookdaemon/agora` are documented here.
 
+## [0.7.0] - 2026-03-06
+
+### Breaking
+- `resolveDisplayName()` no longer accepts a `peerName` hint parameter. Signature is now `(publicKey, directory?)`. Sender-claimed names are never surfaced.
+- `RelayMessageHandlerWithName` type removed. Use `RelayMessageHandler` which is now `(envelope, from) => void`.
+- Relay client `message` event no longer emits `fromName`. The third argument has been removed.
+- `processEnvelope()` on `AgoraMessageHandler` no longer accepts `relayNameHint`.
+
+### Added
+- `getSeenKeysPath(storageDir?)` — returns the default path for the seen-keys store file.
+- `SEEN_KEYS_FILE_NAME` constant (`seen-keys.json`).
+- `SeenKeyStore` now ships with a default path helper alongside the store class.
+
+### Changed
+- Identity display is now fully derived from verified public keys. Known peers appear as `name@suffix8`, unknown peers as `@suffix8`. Claimed names from relay hints are never used.
+
 ## [0.6.3] - 2026-03-06
 
 ### Added

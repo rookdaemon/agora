@@ -1,5 +1,19 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
+import { getDefaultConfigPath } from '../config';
+
+export const SEEN_KEYS_FILE_NAME = 'seen-keys.json';
+
+/**
+ * Default path for the seen-keys store: alongside the Agora config file.
+ */
+export function getSeenKeysPath(storageDir?: string): string {
+  if (storageDir) {
+    return join(storageDir, SEEN_KEYS_FILE_NAME);
+  }
+  const configPath = getDefaultConfigPath();
+  return join(dirname(configPath), SEEN_KEYS_FILE_NAME);
+}
 
 export interface SeenKeyEntry {
   publicKey: string;
