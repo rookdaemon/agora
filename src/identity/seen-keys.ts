@@ -67,6 +67,14 @@ export class SeenKeyStore {
   }
 
   /**
+   * Return all seen keys as PeerReferenceEntry[] (no names — seen keys are nameless).
+   * Useful for merging into a PeerReferenceDirectory to enable expand() for unknown peers.
+   */
+  toReferenceEntries(): Array<{ publicKey: string }> {
+    return Array.from(this.keys.values()).map(entry => ({ publicKey: entry.publicKey }));
+  }
+
+  /**
    * Flush changes to disk. Call periodically or on shutdown.
    */
   flush(): void {

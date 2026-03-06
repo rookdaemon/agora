@@ -33,6 +33,30 @@ function toDirectoryEntries(directory?: PeerReferenceDirectory): PeerReferenceEn
   return Object.values(directory).filter((p) => typeof p.publicKey === 'string' && p.publicKey.length > 0);
 }
 
+/**
+ * Merge a base directory with additional entries (e.g. seen keys).
+ * Base entries take priority — if a key appears in both, the base entry (with name) wins.
+ */
+export function mergeDirectories(
+  base: PeerReferenceDirectory,
+  ...additional: PeerReferenceEntry[][]
+): PeerReferenceEntry[] {
+  const byKey = new Map<string, PeerReferenceEntry>();
+  // Additional entries first (lower priority)
+  for (const entries of additional) {
+    for (const entry of entries) {
+      if (typeof entry.publicKey === 'string' && entry.publicKey.length > 0) {
+        byKey.set(entry.publicKey, entry);
+      }
+    }
+  }
+  // Base entries override (higher priority — they have names)
+  for (const entry of toDirectoryEntries(base)) {
+    byKey.set(entry.publicKey, entry);
+  }
+  return Array.from(byKey.values());
+}
+
 function findById(id: string, directory?: PeerReferenceDirectory): PeerReferenceEntry | undefined {
   return toDirectoryEntries(directory).find((entry) => entry.publicKey === id);
 }
