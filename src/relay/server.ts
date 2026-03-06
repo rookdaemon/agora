@@ -418,8 +418,6 @@ export class RelayServer extends EventEmitter {
           if (openRecipients.length === 0) {
             // If recipient is a storage peer, queue the message
             if (this.store && this.storagePeers.includes(msg.to)) {
-              const senderSessionMap = this.sessions.get(agentPublicKey);
-              const senderAgent = senderSessionMap?.values().next().value;
               this.store.save(msg.to, {
                 from: agentPublicKey,
                 envelope,
@@ -433,12 +431,9 @@ export class RelayServer extends EventEmitter {
 
           // Forward envelope to all sessions of the recipient
           try {
-            const senderSessionMap = this.sessions.get(agentPublicKey);
-            const senderAgent = senderSessionMap?.values().next().value;
             const relayMessage = {
               type: 'message',
               from: agentPublicKey,
-              name: senderAgent?.name,
               envelope,
             };
             const messageStr = JSON.stringify(relayMessage);

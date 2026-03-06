@@ -121,8 +121,6 @@ export function createRestRouter(
 
   relay.on('message-relayed', (from, to, envelope) => {
     if (!sessions.has(to)) return;
-    const agentMap = relay.getAgents();
-    const senderAgent = agentMap.get(from);
     const env = envelope as {
       id: string;
       type: string;
@@ -284,7 +282,6 @@ export function createRestRouter(
 
       const restRecipient = sessions.get(to);
       if (restRecipient) {
-        const senderAgent = wsAgents.get(senderPublicKey);
         const msg: BufferedMessage = {
           id: envelope.id,
           from: senderPublicKey,
