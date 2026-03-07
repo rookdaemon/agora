@@ -288,7 +288,7 @@ export function createRestRouter(
         return;
       }
 
-      res.status(404).json({ error: 'Recipient not connected' });
+      res.status(404).json({ error: `Recipient not connected: ${to}` });
     }
   );
 

@@ -305,7 +305,7 @@ export class RelayServer extends EventEmitter {
 
           // Build peers list: one entry per connected publicKey + storage peers
           const peers: Array<{ publicKey: string }> = [];
-          for (const [key, sessionMap] of this.sessions) {
+          for (const [key] of this.sessions) {
             if (key === publicKey) continue;
             peers.push({ publicKey: key });
           }
@@ -419,7 +419,7 @@ export class RelayServer extends EventEmitter {
               });
               this.emit('message-relayed', agentPublicKey, msg.to, envelope);
             } else {
-              this.sendError(socket, 'Recipient not connected', 'unknown_recipient');
+              this.sendError(socket, `Recipient not connected: ${msg.to}`, 'unknown_recipient');
             }
             return;
           }
@@ -559,9 +559,9 @@ export class RelayServer extends EventEmitter {
         metadata: p.metadata ? {
           version: p.metadata?.version,
           capabilities: p.metadata?.capabilities,
-          } : undefined,
-          lastSeen: p.lastSeen,
-        })),
+        } : undefined,
+        lastSeen: p.lastSeen,
+      })),
       totalPeers: this.sessions.size - (this.sessions.has(requesterPublicKey) ? 1 : 0),
       relayPublicKey: this.identity.publicKey,
     };
