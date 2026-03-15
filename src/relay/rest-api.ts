@@ -2,11 +2,12 @@
  * rest-api.ts — Express router implementing the Agora relay REST API.
  *
  * Endpoints:
- *   POST   /v1/register   — Register agent, obtain JWT session token
- *   POST   /v1/send       — Send message to a peer (requires auth)
- *   GET    /v1/peers      — List online peers (requires auth)
- *   GET    /v1/messages   — Poll for new inbound messages (requires auth)
- *   DELETE /v1/disconnect — Invalidate token and disconnect (requires auth)
+ *   POST   /v1/register         — Register agent, obtain JWT session token
+ *   POST   /v1/send             — Send message to a peer (requires auth)
+ *   GET    /v1/peers            — List online peers (requires auth)
+ *   GET    /v1/messages         — Poll for new inbound messages (requires auth)
+ *   GET    /v1/messages/replay  — Replay messages since a timestamp (requires auth)
+ *   DELETE /v1/disconnect       — Invalidate token and disconnect (requires auth)
  */
 
 import { Router } from 'express';
@@ -112,7 +113,9 @@ export function createRestRouter(
   sessions: Map<string, RestSession>,
   createEnv: CreateEnvelopeFn,
   verifyEnv: VerifyEnvelopeFn,
-  rateLimitRpm = 60
+  rateLimitRpm = 60,
+  replayBuffer?: MessageBuffer,
+  replayRetentionMs = 7 * 24 * 60 * 60 * 1000
 ): Router {
   const router = Router();
   router.use(apiRateLimit(rateLimitRpm));
@@ -135,6 +138,7 @@ export function createRestRouter(
       inReplyTo: env.inReplyTo,
     };
     buffer.add(to, msg);
+    replayBuffer?.add(to, msg);
   });
 
   router.post('/v1/register', async (req: Request, res: Response) => {
@@ -347,6 +351,61 @@ export function createRestRouter(
 
       if (since === undefined) {
         buffer.clear(publicKey);
+      }
+
+      res.json({ messages, hasMore });
+    }
+  );
+
+  router.get(
+    '/v1/messages/replay',
+    requireAuth,
+    (req: AuthenticatedRequest, res: Response) => {
+      if (!replayBuffer) {
+        res.status(501).json({ error: 'Replay endpoint is not enabled on this relay' });
+        return;
+      }
+
+      const publicKey = req.agent!.publicKey;
+      const sinceRaw = req.query.since as string | undefined;
+      const limitRaw = req.query.limit as string | undefined;
+
+      if (!sinceRaw) {
+        res.status(400).json({ error: '`since` query parameter is required (ISO8601 timestamp)' });
+        return;
+      }
+
+      const sinceDate = new Date(sinceRaw);
+      if (isNaN(sinceDate.getTime())) {
+        res.status(400).json({ error: 'Invalid `since` value — must be a valid ISO8601 timestamp' });
+        return;
+      }
+
+      const sinceMs = sinceDate.getTime();
+      const oldestAllowed = Date.now() - replayRetentionMs;
+
+      if (sinceMs < oldestAllowed) {
+        res.status(400).json({
+          error: 'retention_exceeded',
+          message: `\`since\` is older than the ${Math.round(replayRetentionMs / 86400000)}-day retention window`,
+        });
+        return;
+      }
+
+      let limit = 100;
+      if (limitRaw !== undefined) {
+        const parsedLimit = parseInt(limitRaw, 10);
+        if (isNaN(parsedLimit) || parsedLimit < 1) {
+          res.status(400).json({ error: 'Invalid `limit` value — must be a positive integer' });
+          return;
+        }
+        limit = Math.min(parsedLimit, 500);
+      }
+
+      let messages = replayBuffer.get(publicKey, sinceMs);
+      const hasMore = messages.length > limit;
+      if (hasMore) {
+        messages = messages.slice(0, limit);
       }
 
       res.json({ messages, hasMore });
