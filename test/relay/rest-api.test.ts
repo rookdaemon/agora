@@ -97,14 +97,15 @@ function mockVerifyEnvelope(env: unknown): { valid: boolean; reason?: string } {
 function buildApp(
   relay: MockRelay = createMockRelay(),
   buffer = new MessageBuffer(),
-  sessions = new Map<string, RestSession>()
-): { app: express.Express; relay: MockRelay; buffer: MessageBuffer; sessions: Map<string, RestSession> } {
+  sessions = new Map<string, RestSession>(),
+  replayBuffer?: MessageBuffer
+): { app: express.Express; relay: MockRelay; buffer: MessageBuffer; sessions: Map<string, RestSession>; replayBuffer?: MessageBuffer } {
   const app = express();
   app.use(express.json());
   app.use(
-    createRestRouter(relay, buffer, sessions, mockCreateEnvelope, mockVerifyEnvelope)
+    createRestRouter(relay, buffer, sessions, mockCreateEnvelope, mockVerifyEnvelope, 60, replayBuffer)
   );
-  return { app, relay, buffer, sessions };
+  return { app, relay, buffer, sessions, replayBuffer };
 }
 
 const ALICE = {
@@ -370,6 +371,255 @@ describe('Token expiry', () => {
       .set('Authorization', `Bearer ${expiredToken}`);
     assert.strictEqual(res.status, 401);
     assert.ok(/expired/i.test(res.body.error));
+  });
+});
+
+describe('GET /v1/messages/replay', () => {
+  beforeEach(setJwtEnv);
+  afterEach(clearJwtEnv);
+
+  it('returns 401 without auth', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), new Map(), replayBuffer);
+    const res = await supertest(app).get('/v1/messages/replay?since=2024-01-01T00:00:00.000Z');
+    assert.strictEqual(res.status, 401);
+  });
+
+  it('returns 501 when replay buffer is not configured', async () => {
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const res = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 501);
+    assert.ok(res.body.error);
+  });
+
+  it('returns 400 when `since` is missing', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const res = await supertest(app)
+      .get('/v1/messages/replay')
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 400);
+    assert.ok(res.body.error);
+  });
+
+  it('returns 400 for invalid ISO8601 timestamp', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const res = await supertest(app)
+      .get('/v1/messages/replay?since=not-a-timestamp')
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 400);
+    assert.ok(res.body.error);
+  });
+
+  it('returns 400 with retention_exceeded when since is older than retention window', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    // Use a timestamp 8 days in the past (beyond 7-day retention)
+    const oldSince = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    const res = await supertest(app)
+      .get(`/v1/messages/replay?since=${oldSince}`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual(res.body.error, 'retention_exceeded');
+    assert.ok(res.body.message);
+  });
+
+  it('returns messages after the since timestamp', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+
+    const now = Date.now();
+    const sinceMs = now - 60_000; // 1 minute ago
+
+    // Add a message before since (should not appear)
+    replayBuffer.add(ALICE.publicKey, {
+      id: 'old-msg',
+      from: BOB.publicKey,
+      type: 'publish',
+      payload: { text: 'old' },
+      timestamp: sinceMs - 1000,
+    });
+    // Add a message after since (should appear)
+    replayBuffer.add(ALICE.publicKey, {
+      id: 'new-msg',
+      from: BOB.publicKey,
+      type: 'publish',
+      payload: { text: 'new' },
+      timestamp: sinceMs + 1000,
+    });
+
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const since = new Date(sinceMs).toISOString();
+    const res = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.messages.length, 1);
+    assert.strictEqual(res.body.messages[0].id, 'new-msg');
+    assert.strictEqual(res.body.hasMore, false);
+  });
+
+  it('does not clear replay buffer after read', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+
+    const sinceMs = Date.now() - 60_000;
+    replayBuffer.add(ALICE.publicKey, {
+      id: 'replay-msg',
+      from: BOB.publicKey,
+      type: 'publish',
+      payload: { text: 'replay' },
+      timestamp: sinceMs + 1000,
+    });
+
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const since = new Date(sinceMs).toISOString();
+
+    // First read
+    const res1 = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res1.status, 200);
+    assert.strictEqual(res1.body.messages.length, 1);
+
+    // Second read — same message should still be there (not cleared)
+    const res2 = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res2.status, 200);
+    assert.strictEqual(res2.body.messages.length, 1);
+  });
+
+  it('respects the limit parameter (max 500)', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+
+    const sinceMs = Date.now() - 60_000;
+    for (let i = 0; i < 10; i++) {
+      replayBuffer.add(ALICE.publicKey, {
+        id: `msg-${i}`,
+        from: BOB.publicKey,
+        type: 'publish',
+        payload: {},
+        timestamp: sinceMs + 1000 + i,
+      });
+    }
+
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const since = new Date(sinceMs).toISOString();
+    const res = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}&limit=3`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.messages.length, 3);
+    assert.strictEqual(res.body.hasMore, true);
+  });
+
+  it('caps limit at 500', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const { app } = buildApp(createMockRelay(), new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+
+    const sinceMs = Date.now() - 60_000;
+    // Add 505 messages to exceed the 500 cap
+    for (let i = 0; i < 505; i++) {
+      replayBuffer.add(ALICE.publicKey, {
+        id: `msg-${i}`,
+        from: BOB.publicKey,
+        type: 'publish',
+        payload: {},
+        timestamp: sinceMs + 1000 + i,
+      });
+    }
+
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const since = new Date(sinceMs).toISOString();
+    const res = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}&limit=1000`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 200);
+    // limit=1000 is capped at 500; 505 messages exist so hasMore should be true
+    assert.strictEqual(res.body.messages.length, 500);
+    assert.strictEqual(res.body.hasMore, true);
+  });
+
+  it('buffers messages via relay event into replay buffer', async () => {
+    const replayBuffer = new MessageBuffer({ ttlMs: 7 * 24 * 60 * 60 * 1000, maxMessages: 10000 });
+    const sessions = new Map<string, RestSession>();
+    const relay = createMockRelay();
+    const { app } = buildApp(relay, new MessageBuffer(), sessions, replayBuffer);
+    await supertest(app).post('/v1/register').send({
+      publicKey: ALICE.publicKey,
+      privateKey: ALICE.privateKey,
+    });
+
+    const sinceMs = Date.now() - 60_000;
+
+    // Emit a relay event (simulates a message being relayed)
+    relay._emit(BOB.publicKey, ALICE.publicKey, {
+      id: 'relayed-1',
+      type: 'publish',
+      from: BOB.publicKey,
+      to: [ALICE.publicKey],
+      payload: { text: 'from relay' },
+      timestamp: sinceMs + 1000,
+    });
+
+    const aliceToken = sessions.get(ALICE.publicKey)!.token;
+    const since = new Date(sinceMs).toISOString();
+    const res = await supertest(app)
+      .get(`/v1/messages/replay?since=${since}`)
+      .set('Authorization', `Bearer ${aliceToken}`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.messages.length, 1);
+    assert.strictEqual(res.body.messages[0].id, 'relayed-1');
   });
 });
 

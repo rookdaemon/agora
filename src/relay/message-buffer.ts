@@ -23,15 +23,17 @@ const MAX_MESSAGES_PER_AGENT = 100;
 
 /**
  * MessageBuffer stores inbound messages per agent public key.
- * FIFO eviction when the buffer is full (max 100 messages).
+ * FIFO eviction when the buffer is full (max maxMessages messages).
  * Messages older than ttlMs (measured from when they were received) are pruned on access.
  */
 export class MessageBuffer {
   private buffers: Map<string, StoredMessage[]> = new Map();
   private ttlMs: number;
+  private maxMessages: number;
 
-  constructor(options?: { ttlMs?: number }) {
+  constructor(options?: { ttlMs?: number; maxMessages?: number }) {
     this.ttlMs = options?.ttlMs ?? 86400000; // default 24h
+    this.maxMessages = options?.maxMessages ?? MAX_MESSAGES_PER_AGENT;
   }
 
   /**
@@ -45,7 +47,7 @@ export class MessageBuffer {
       this.buffers.set(publicKey, queue);
     }
     queue.push({ message, receivedAt: Date.now() });
-    if (queue.length > MAX_MESSAGES_PER_AGENT) {
+    if (queue.length > this.maxMessages) {
       queue.shift(); // FIFO eviction
     }
   }
