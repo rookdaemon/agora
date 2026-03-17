@@ -102,6 +102,8 @@ export async function runRelay(options: RunRelayOptions = {}): Promise<{
   const restPort = options.restPort ?? parseInt(process.env.REST_PORT ?? '3001', 10);
   const messageTtlMs = parseInt(process.env.MESSAGE_TTL_MS ?? '86400000', 10);
   const messageBuffer = new MessageBuffer({ ttlMs: messageTtlMs });
+  const replayRetentionMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const replayBuffer = new MessageBuffer({ ttlMs: replayRetentionMs, maxMessages: 10000 });
   const restSessions = new Map<string, RestSession>();
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS ?? '*';
@@ -127,7 +129,9 @@ export async function runRelay(options: RunRelayOptions = {}): Promise<{
     restSessions,
     createEnvelopeForRest,
     verifyForRest,
-    rateLimitRpm
+    rateLimitRpm,
+    replayBuffer,
+    replayRetentionMs
   );
   app.use(router);
 
