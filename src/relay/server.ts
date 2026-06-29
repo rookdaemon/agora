@@ -30,6 +30,8 @@ interface ConnectedAgent {
   socket: WebSocket;
   /** Last seen timestamp (ms) */
   lastSeen: number;
+  /** Heartbeat liveness flag: true after pong, false after ping is sent */
+  isAlive: boolean;
   /** Optional metadata */
   metadata?: {
     version?: string;
@@ -69,6 +71,8 @@ export interface RelayServerOptions {
   rateLimit?: RelayRateLimitOptions;
   /** Envelope ID deduplication options */
   envelopeDedup?: RelayEnvelopeDedupOptions;
+  /** WebSocket ping interval for zombie-session detection (ms, default: 30 000) */
+  heartbeatIntervalMs?: number;
 }
 
 export class RelayServer extends EventEmitter {
@@ -87,6 +91,8 @@ export class RelayServer extends EventEmitter {
   private rateLimitWindowMs = 60_000;
   private envelopeDedupEnabled = true;
   private envelopeDedupMaxIds = 1000;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatIntervalMs = 30_000;
 
   constructor(options?: { publicKey: string; privateKey: string } | RelayServerOptions) {
     super();
@@ -122,6 +128,9 @@ export class RelayServer extends EventEmitter {
         if (opts.envelopeDedup.maxIds !== undefined && opts.envelopeDedup.maxIds > 0) {
           this.envelopeDedupMaxIds = opts.envelopeDedup.maxIds;
         }
+      }
+      if (opts.heartbeatIntervalMs !== undefined && opts.heartbeatIntervalMs > 0) {
+        this.heartbeatIntervalMs = opts.heartbeatIntervalMs;
       }
     }
   }
@@ -205,6 +214,7 @@ export class RelayServer extends EventEmitter {
         this.wss.on('listening', () => {
           if (!resolved) {
             resolved = true;
+            this.startHeartbeat();
             resolve();
           }
         });
@@ -228,6 +238,11 @@ export class RelayServer extends EventEmitter {
         return;
       }
 
+      if (this.heartbeatTimer !== null) {
+        clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = null;
+      }
+
       // Close all agent connections (all sessions)
       for (const sessionMap of this.sessions.values()) {
         for (const agent of sessionMap.values()) {
@@ -245,6 +260,27 @@ export class RelayServer extends EventEmitter {
         }
       });
     });
+  }
+
+  private startHeartbeat(): void {
+    this.heartbeatTimer = setInterval(() => {
+      for (const sessionMap of this.sessions.values()) {
+        for (const agent of sessionMap.values()) {
+          if (!agent.isAlive) {
+            // No pong since last ping — zombie session, terminate it
+            agent.socket.terminate();
+            continue;
+          }
+          agent.isAlive = false;
+          try {
+            agent.socket.ping();
+          } catch {
+            // Socket already closing — ignore
+          }
+        }
+      }
+    }, this.heartbeatIntervalMs);
+    this.heartbeatTimer.unref();
   }
 
   /**
@@ -293,7 +329,12 @@ export class RelayServer extends EventEmitter {
             publicKey,
             socket,
             lastSeen: Date.now(),
+            isAlive: true,
           };
+
+          socket.on('pong', () => {
+            agent.isAlive = true;
+          });
 
           if (!this.sessions.has(publicKey)) {
             this.sessions.set(publicKey, new Map());
@@ -425,20 +466,38 @@ export class RelayServer extends EventEmitter {
           }
 
           // Forward envelope to all sessions of the recipient
-          try {
-            const relayMessage = {
-              type: 'message',
-              from: agentPublicKey,
-              envelope,
-            };
-            const messageStr = JSON.stringify(relayMessage);
-            for (const recipient of openRecipients) {
+          const relayMessage = {
+            type: 'message',
+            from: agentPublicKey,
+            envelope,
+          };
+          const messageStr = JSON.stringify(relayMessage);
+
+          let sentCount = 0;
+          for (const recipient of openRecipients) {
+            try {
               recipient.socket.send(messageStr);
+              sentCount++;
+            } catch (err) {
+              // Zombie socket — terminate so close event fires and cleans up the session
+              this.emit('error', err as Error);
+              try { recipient.socket.terminate(); } catch { /* already closing */ }
             }
+          }
+
+          if (sentCount > 0) {
             this.emit('message-relayed', agentPublicKey, msg.to, envelope);
-          } catch (err) {
-            this.sendError(socket, 'Failed to relay message');
-            this.emit('error', err as Error);
+          } else {
+            // All send attempts failed — fall back to storage if configured
+            if (this.store && this.storagePeers.includes(msg.to)) {
+              this.store.save(msg.to, {
+                from: agentPublicKey,
+                envelope,
+              });
+              this.emit('message-relayed', agentPublicKey, msg.to, envelope);
+            } else {
+              this.sendError(socket, 'Failed to relay message');
+            }
           }
           return;
         }
