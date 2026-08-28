@@ -269,6 +269,71 @@ describe('RelayServer', () => {
     recipient.close();
   });
 
+  it('should forward a group envelope once to each recipient', async () => {
+    const alice = generateKeyPair();
+    const bob = generateKeyPair();
+    const carol = generateKeyPair();
+    const envelope = createEnvelope(
+      'publish',
+      alice.publicKey,
+      alice.privateKey,
+      { text: 'deliver to the group' },
+      Date.now(),
+      undefined,
+      [bob.publicKey, carol.publicKey],
+    );
+
+    const sender = new WebSocket(`ws://localhost:${TEST_PORT}`);
+    const bobSocket = new WebSocket(`ws://localhost:${TEST_PORT}`);
+    const carolSocket = new WebSocket(`ws://localhost:${TEST_PORT}`);
+
+    await Promise.all([
+      new Promise<void>((resolve) => sender.on('open', resolve)),
+      new Promise<void>((resolve) => bobSocket.on('open', resolve)),
+      new Promise<void>((resolve) => carolSocket.on('open', resolve)),
+    ]);
+
+    const register = (socket: WebSocket, publicKey: string): Promise<void> => new Promise((resolve) => {
+      socket.on('message', (data: Buffer) => {
+        if (JSON.parse(data.toString()).type === 'registered') {
+          resolve();
+        }
+      });
+      socket.send(JSON.stringify({ type: 'register', publicKey }));
+    });
+    await Promise.all([
+      register(sender, alice.publicKey),
+      register(bobSocket, bob.publicKey),
+      register(carolSocket, carol.publicKey),
+    ]);
+
+    const bobReceived: unknown[] = [];
+    const carolReceived: unknown[] = [];
+    bobSocket.on('message', (data: Buffer) => {
+      if (JSON.parse(data.toString()).type === 'message') {
+        bobReceived.push(data);
+      }
+    });
+    carolSocket.on('message', (data: Buffer) => {
+      if (JSON.parse(data.toString()).type === 'message') {
+        carolReceived.push(data);
+      }
+    });
+
+    sender.send(JSON.stringify({ type: 'message', to: bob.publicKey, envelope }));
+    sender.send(JSON.stringify({ type: 'message', to: carol.publicKey, envelope }));
+    sender.send(JSON.stringify({ type: 'message', to: bob.publicKey, envelope }));
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    assert.strictEqual(bobReceived.length, 1);
+    assert.strictEqual(carolReceived.length, 1);
+
+    sender.close();
+    bobSocket.close();
+    carolSocket.close();
+  });
+
   it('should enforce per-sender rate limit before forwarding', async () => {
     const limitedServer = new RelayServer({
       rateLimit: { enabled: true, maxMessages: 3, windowMs: 60_000 },

@@ -85,7 +85,7 @@ export class RelayServer extends EventEmitter {
   private maxPeers: number = 100;
   private readonly senderWindows: Map<string, SenderWindow> = new Map();
   private static readonly MAX_SENDER_ENTRIES = 500;
-  private readonly processedEnvelopeIds: Set<string> = new Set();
+  private readonly processedDeliveryIds: Set<string> = new Set();
   private rateLimitEnabled = true;
   private rateLimitMaxMessages = 10;
   private rateLimitWindowMs = 60_000;
@@ -172,20 +172,26 @@ export class RelayServer extends EventEmitter {
     }
   }
 
-  private isDuplicateEnvelopeId(envelopeId: string): boolean {
+  /**
+   * A signed group envelope has one stable ID but is legitimately routed once
+   * to each recipient. Deduplicate individual deliveries, not the envelope
+   * globally, so a relay retry cannot suppress another member of the group.
+   */
+  private isDuplicateDelivery(envelopeId: string, recipient: string): boolean {
     if (!this.envelopeDedupEnabled) {
       return false;
     }
 
-    if (this.processedEnvelopeIds.has(envelopeId)) {
+    const deliveryId = `${recipient}\u0000${envelopeId}`;
+    if (this.processedDeliveryIds.has(deliveryId)) {
       return true;
     }
 
-    this.processedEnvelopeIds.add(envelopeId);
-    if (this.processedEnvelopeIds.size > this.envelopeDedupMaxIds) {
-      const oldest = this.processedEnvelopeIds.values().next().value;
+    this.processedDeliveryIds.add(deliveryId);
+    if (this.processedDeliveryIds.size > this.envelopeDedupMaxIds) {
+      const oldest = this.processedDeliveryIds.values().next().value;
       if (oldest !== undefined) {
-        this.processedEnvelopeIds.delete(oldest);
+        this.processedDeliveryIds.delete(oldest);
       }
     }
 
@@ -428,7 +434,7 @@ export class RelayServer extends EventEmitter {
             return;
           }
 
-          if (this.isDuplicateEnvelopeId(envelope.id)) {
+          if (this.isDuplicateDelivery(envelope.id, msg.to)) {
             return;
           }
 
